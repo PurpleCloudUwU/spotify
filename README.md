@@ -1,6 +1,6 @@
 # Obsidian – Spicetify-Theme
 
-Dunkles Spotify-Theme für [Spicetify](https://spicetify.app).
+Purple Spotify-Theme für [Spicetify](https://spicetify.app).
 
 ## Installation (Windows)
 
