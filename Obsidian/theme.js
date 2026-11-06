@@ -1,0 +1,382 @@
+// Obsidian for Spicetify – animated contour background (same engine as the Discord ObsidianBackground plugin)
+(function obsidian() {
+  // Settings
+  const OPTS = {
+    opacity: 0.6,      // canvas opacity
+    size: 13,          // character size (px)
+    speed: 0.045,      // animation speed
+    fps: 30,           // while the spotlight follows the mouse
+    idleFps: 30,       // otherwise (lower saves CPU, the slow drift looks the same at 12)
+    blurFps: 4,        // while Spotify has no focus
+    spotlight: true,   // light cone that follows the mouse
+    color: "#615c6b",  // line colour
+    accent: "#9d4ff0", // every 5th line
+    coverHeader: true  // blurred cover behind playlist/album headers (look: --obs-cover-* in user.css)
+  };
+
+  /* Topo background: contour lines of an animated 3D simplex noise field, drawn as monospace characters.
+     topo(canvas, options) – the canvas sits fixed behind the content, the mouse creates a light cone.
+     Plugin version: returns a stop function and pauses while the window is hidden. */
+  function topo(canvas, opt) {
+    const o = Object.assign({
+      font: '"JetBrains Mono", ui-monospace, monospace', size: 13, cellW: 0.95, cellH: 1.4,
+      chars: "abcdefghijklmnopqrstuvwxyz0123456789",
+      color: "#5e5a68", accent: "#8a2be2",
+      scale: 0.0011, stretch: 0.65, levels: 5, speed: 0.045, every: 5,
+      line: 0.75, accentLine: 0.9, minor: 0, width: 0.95,
+      dust: 0.12, dustAlpha: 0.035, flicker: 0.004,
+      spot: 170, spotGain: 0.45, fps: 30, idleFps: 12, blurFps: 4, seed: 7
+    }, opt);
+    const ctx = canvas.getContext("2d");
+    const noise = simplex3(o.seed);
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+    const nch = o.chars.length;
+    let W, H, dpr, cw, ch, cols, rows, N, V, C, M, atlas, gw, gh;
+    let t = o.seed * 3.7, last = 0, raf = 0;
+    let mx = 0, my = 0, sx = 0, sy = 0, son = 0, si = 0;
+
+    function buildAtlas() {
+      gw = Math.ceil(cw * dpr); gh = Math.ceil(ch * dpr);
+      atlas = document.createElement("canvas");
+      atlas.width = gw * nch; atlas.height = gh * 2;
+      const a = atlas.getContext("2d");
+      a.font = `${o.size * dpr}px ${o.font}`; a.textAlign = "center"; a.textBaseline = "middle";
+      [o.color, o.accent].forEach((col, row) => {
+        a.fillStyle = col;
+        for (let i = 0; i < nch; i++) a.fillText(o.chars[i], i * gw + gw / 2, row * gh + gh / 2);
+      });
+    }
+
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      W = canvas.clientWidth; H = canvas.clientHeight;
+      canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+      cw = o.size * o.cellW; ch = o.size * o.cellH;
+      // one cell of margin on each side, so the gradient is right at the image edge too
+      cols = Math.ceil(W / cw) + 2; rows = Math.ceil(H / ch) + 2; N = cols * rows;
+      V = new Float32Array(N); C = new Uint8Array(N); M = new Float32Array(N);
+      for (let i = 0; i < N; i++) { C[i] = Math.random() * nch | 0; M[i] = Math.random(); }
+      buildAtlas();
+      render();
+    }
+
+    function render() {
+      // x scaled less: lines run more horizontally and look denser in the character grid
+      const s = o.scale, s2 = s * 2.3, kx = o.stretch, lv = o.levels, z = t;
+      for (let r = 0; r < rows; r++) {
+        const py = (r - 1) * ch + ch / 2;
+        for (let c = 0; c < cols; c++) {
+          const px = ((c - 1) * cw + cw / 2) * kx;
+          V[r * cols + c] = (noise(px * s, py * s, z) * 0.78 + noise(px * s2 + 31.7, py * s2 - 11.3, z * 1.4) * 0.22) * lv;
+        }
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const half = o.width * ch, R = o.spot * si, R2 = R * R, ev = o.every;
+      for (let r = 1; r < rows - 1; r++) {
+        const y = (r - 1) * ch, dy = y + ch / 2 - sy, dy2 = dy * dy;
+        for (let c = 1; c < cols - 1; c++) {
+          const i = r * cols + c, v = V[i];
+          const gx = (V[i + 1] - V[i - 1]) / (2 * cw), gy = (V[i + cols] - V[i - cols]) / (2 * ch);
+          const g = Math.sqrt(gx * gx + gy * gy) + 1e-6;
+          const k = Math.round(v), d = Math.abs(v - k) / g;
+          let a = 0, row = 0, on = false;
+          if (d < half) {
+            const q = 1 - d / half, acc = ev && ((k % ev) + ev) % ev === 0;
+            a = q * q * (acc ? o.accentLine : o.line); row = acc ? 1 : 0; on = true;
+          } else {
+            const dm = Math.abs(v - Math.floor(v) - 0.5) / g;
+            if (dm < half * 0.8) a = (1 - dm / (half * 0.8)) * o.minor;
+            else if (M[i] < o.dust) a = o.dustAlpha;
+          }
+          const x = (c - 1) * cw;
+          if (R > 1) {
+            const dx = x + cw / 2 - sx, dd = dx * dx + dy2;
+            if (dd < R2) { const f = 1 - Math.sqrt(dd) / R; a += f * f * o.spotGain * (on ? 1 : 0.4); }
+          }
+          if (a < 0.015) continue;
+          ctx.globalAlpha = a > 1 ? 1 : a;
+          ctx.drawImage(atlas, C[i] * gw, row * gh, gw, gh, Math.round(x * dpr), Math.round(y * dpr), gw, gh);
+        }
+      }
+    }
+
+    // Frame rate: full fps only while the spotlight moves, otherwise idleFps, and blurFps while the window has no focus.
+    // A timer waits for the next frame, so the page does not wake up on every vsync (165 Hz) just to skip it.
+    let timer = 0;
+    function currentFps() {
+      if (!document.hasFocus()) return o.blurFps;
+      const moving = si > 0.02 && (Math.abs(mx - sx) > 0.5 || Math.abs(my - sy) > 0.5 || Math.abs(son - si) > 0.01);
+      return moving ? o.fps : o.idleFps;
+    }
+    function frame(now) {
+      raf = 0;
+      const dt = Math.min(now - last, 250) / 1000;
+      last = now;
+      t += dt * o.speed;
+      const k = Math.min(dt * 30, 1); // smoothing per 30 fps frame, independent of the current frame rate
+      si += (son - si) * 0.12 * k;
+      sx += (mx - sx) * 0.2 * k; sy += (my - sy) * 0.2 * k;
+      for (let n = N * o.flicker * k; n > 0; n--) C[Math.random() * N | 0] = Math.random() * nch | 0;
+      render();
+      schedule();
+    }
+    function schedule() {
+      if (reduce.matches || document.hidden || raf || timer || ac.signal.aborted) return;
+      const wait = Math.max(0, 1000 / currentFps() - (performance.now() - last) - 4);
+      timer = setTimeout(() => { timer = 0; if (!document.hidden && !ac.signal.aborted) raf = requestAnimationFrame(frame); }, wait);
+    }
+    // wake up early when the mouse comes back, instead of waiting for the slow idle frame
+    function wake() { if (timer) { clearTimeout(timer); timer = 0; } schedule(); }
+
+    const ac = new AbortController(), signal = ac.signal;
+    if (o.spot) {
+      addEventListener("pointermove", e => {
+        if (si < 0.02) { sx = e.clientX; sy = e.clientY; }
+        mx = e.clientX; my = e.clientY;
+        if (!son || performance.now() - last > 1000 / o.fps) { son = 1; wake(); }
+      }, { passive: true, signal });
+      addEventListener("pointerup", e => { if (e.pointerType !== "mouse") son = 0; }, { signal });
+      document.documentElement.addEventListener("mouseleave", () => { son = 0; }, { signal });
+    }
+    let rt;
+    // Observe the canvas itself: catches late CSS, zoom changes and window resizes
+    const ro = new ResizeObserver(() => {
+      if (canvas.clientWidth === W && canvas.clientHeight === H) return;
+      clearTimeout(rt); rt = setTimeout(resize, 120);
+    });
+    ro.observe(canvas);
+    signal.addEventListener("abort", () => ro.disconnect());
+    addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(resize, 120); }, { signal });
+    reduce.addEventListener?.("change", schedule, { signal });
+    document.addEventListener("visibilitychange", () => { last = performance.now(); schedule(); }, { signal });
+    addEventListener("focus", wake, { signal });
+    resize();
+    schedule();
+    if (document.fonts) document.fonts.load(`${o.size}px ${o.font}`).then(() => { if (!signal.aborted) { buildAtlas(); render(); } });
+
+    return () => { ac.abort(); clearTimeout(rt); clearTimeout(timer); if (raf) cancelAnimationFrame(raf); raf = 0; timer = 0; };
+  }
+
+  /* 3D simplex noise after Stefan Gustavson, with a seed */
+  function simplex3(seed) {
+    const p = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) p[i] = i;
+    let s = seed >>> 0 || 1;
+    const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+    for (let i = 255; i > 0; i--) { const j = rnd() * (i + 1) | 0; const x = p[i]; p[i] = p[j]; p[j] = x; }
+    const perm = new Uint8Array(512), pm = new Uint8Array(512);
+    for (let i = 0; i < 512; i++) { perm[i] = p[i & 255]; pm[i] = perm[i] % 12 * 3; }
+    const g = [1,1,0, -1,1,0, 1,-1,0, -1,-1,0, 1,0,1, -1,0,1, 1,0,-1, -1,0,-1, 0,1,1, 0,-1,1, 0,1,-1, 0,-1,-1];
+    const F = 1 / 3, G = 1 / 6;
+    const corner = (x, y, z, gi) => {
+      let t = 0.6 - x * x - y * y - z * z;
+      if (t < 0) return 0;
+      t *= t;
+      return t * t * (g[gi] * x + g[gi + 1] * y + g[gi + 2] * z);
+    };
+    return (x, y, z) => {
+      const s = (x + y + z) * F;
+      const i = Math.floor(x + s), j = Math.floor(y + s), k = Math.floor(z + s);
+      const t = (i + j + k) * G;
+      const x0 = x - i + t, y0 = y - j + t, z0 = z - k + t;
+      let i1, j1, k1, i2, j2, k2;
+      if (x0 >= y0) {
+        if (y0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+        else if (x0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 0; k2 = 1; }
+        else { i1 = 0; j1 = 0; k1 = 1; i2 = 1; j2 = 0; k2 = 1; }
+      } else {
+        if (y0 < z0) { i1 = 0; j1 = 0; k1 = 1; i2 = 0; j2 = 1; k2 = 1; }
+        else if (x0 < z0) { i1 = 0; j1 = 1; k1 = 0; i2 = 0; j2 = 1; k2 = 1; }
+        else { i1 = 0; j1 = 1; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+      }
+      const ii = i & 255, jj = j & 255, kk = k & 255;
+      return 32 * (
+        corner(x0, y0, z0, pm[ii + perm[jj + perm[kk]]]) +
+        corner(x0 - i1 + G, y0 - j1 + G, z0 - k1 + G, pm[ii + i1 + perm[jj + j1 + perm[kk + k1]]]) +
+        corner(x0 - i2 + 2 * G, y0 - j2 + 2 * G, z0 - k2 + 2 * G, pm[ii + i2 + perm[jj + j2 + perm[kk + k2]]]) +
+        corner(x0 - 1 + 3 * G, y0 - 1 + 3 * G, z0 - 1 + 3 * G, pm[ii + 1 + perm[jj + 1 + perm[kk + 1]]]));
+    };
+  }
+
+  function start() {
+    if (document.getElementById("obs-topo")) return;
+    if (!document.body || !document.getElementById("main")) return setTimeout(start, 300);
+    const canvas = document.createElement("canvas");
+    canvas.id = "obs-topo";
+    canvas.setAttribute("aria-hidden", "true");
+    // Inline layout so the canvas has its size before user.css is applied
+    canvas.style.cssText = "position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none";
+    canvas.style.opacity = String(OPTS.opacity);
+    document.body.prepend(canvas);
+    topo(canvas, {
+      font: '"Geist Mono", ui-monospace, monospace', size: OPTS.size,
+      color: OPTS.color, accent: OPTS.accent, every: 5,
+      spot: OPTS.spotlight ? 180 : 0, spotGain: 0.5,
+      speed: OPTS.speed, fps: OPTS.fps, idleFps: OPTS.idleFps, blurFps: OPTS.blurFps, seed: 3
+    });
+  }
+  // Blurred cover behind entity headers. CSS cannot read the <img> src, so copy it into a layer
+  // (#obs-cover-bg) at the top of the page section; user.css makes the colour layers transparent around it.
+  function coverHeader() {
+    const view = document.getElementById("main-view");
+    if (!view) return setTimeout(coverHeader, 500);
+    let queued = false;
+    const update = () => {
+      queued = false;
+      const page = view.querySelector("[data-testid$=\"-page\"]");
+      const img = page?.querySelector("[data-testid=\"entity-header\"] img");
+      const src = img && (img.currentSrc || img.src);
+      view.querySelectorAll("#obs-cover-bg").forEach(el => { if (el.parentElement !== page || !src) el.remove(); });
+      if (!page || !src) return;
+      let bg = page.querySelector(":scope > #obs-cover-bg");
+      if (!bg) {
+        bg = document.createElement("div");
+        bg.id = "obs-cover-bg";
+        bg.setAttribute("aria-hidden", "true");
+        page.prepend(bg);
+      }
+      if (bg.dataset.src !== src) {
+        bg.dataset.src = src;
+        paintCover(bg, src);
+      }
+    };
+    const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(update); } };
+    // Repaint when the panel width changes (the bitmap is drawn for one size)
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) {
+        const bg = e.target;
+        if (bg.isConnected && bg.dataset.src && Math.abs(bg.clientWidth - (bg._obsW || 0)) > 24) paintCover(bg, bg.dataset.src);
+      }
+    });
+    const observed = new WeakSet();
+
+    // Blur, darkening and the fade-out are baked into a small canvas once. CSS mask-image (and the live 60px filter)
+    // on this layer made Spotify's compositor draw black streaks over the rows below the header (2026-10-30).
+    function paintCover(bg, src) {
+      if (!observed.has(bg)) { observed.add(bg); ro.observe(bg); }
+      const img = new Image();
+      img.onload = () => {
+        if (bg.dataset.src !== src || !bg.isConnected) return;
+        const cs = getComputedStyle(bg);
+        const num = (name, def) => parseFloat(cs.getPropertyValue(name)) || def;
+        const blur = num("--obs-cover-blur", 60), sat = num("--obs-cover-saturate", 1.3), bright = num("--obs-cover-brightness", 0.6);
+        const W = bg.clientWidth || 800, H = bg.clientHeight || 560, f = 0.25; // a quarter of the size is plenty after the blur
+        const cv = document.createElement("canvas");
+        cv.width = Math.max(1, Math.round(W * f)); cv.height = Math.max(1, Math.round(H * f));
+        const ctx = cv.getContext("2d");
+        // background-size: cover over the area plus the blur margin, so the edges do not fade out
+        const m = blur * 2 * f, aw = cv.width + 2 * m, ah = cv.height + 2 * m;
+        const s = Math.max(aw / img.naturalWidth, ah / img.naturalHeight), dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+        ctx.filter = `blur(${blur * f}px) saturate(${sat}) brightness(${bright})`;
+        ctx.drawImage(img, (cv.width - dw) / 2, (cv.height - dh) / 2, dw, dh);
+        ctx.filter = "none";
+        // darken towards the bottom so the title and the action bar stay readable
+        let g = ctx.createLinearGradient(0, 0, 0, cv.height);
+        g.addColorStop(0, "rgba(9, 9, 11, .15)"); g.addColorStop(1, "rgba(9, 9, 11, .55)");
+        ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
+        // Brightness floor: nearly black pixels at about half transparency make Spotify's compositor draw black/white
+        // streaks over the rows (very dark artist photos, 2026-10-30); a floor of 20 is invisible and fixes it
+        ctx.globalCompositeOperation = "lighten";
+        ctx.fillStyle = "rgb(20, 20, 24)"; ctx.fillRect(0, 0, cv.width, cv.height);
+        // fade out: opaque for the first 40 %, then to transparent
+        ctx.globalCompositeOperation = "destination-in";
+        g = ctx.createLinearGradient(0, 0, 0, cv.height);
+        g.addColorStop(0.4, "#000"); g.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
+        bg._obsW = W;
+        bg.replaceChildren(cv);
+      };
+      img.src = src;
+    }
+    new MutationObserver(schedule).observe(view, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "srcset"] });
+    schedule();
+  }
+
+  // Window buttons: Spotify draws minimize/maximize/close natively with a dark backdrop that CSS cannot reach.
+  // Hide the native ones through Spotify's DesktopUpdateUi service and draw transparent HTML buttons
+  // (#obs-winctl) that call the DesktopWindowState service. If anything is missing, the native buttons stay.
+  function windowControls(tries = 0) {
+    const retry = () => { if (tries < 120) setTimeout(() => windowControls(tries + 1), 500); };
+    const key = ["rspackChunk", "rspackChunkclient_web", "webpackChunkclient_web"].find(k => window[k]);
+    if (!key || !document.body || !window.Spicetify?.Platform) return retry();
+
+    // Esperanto clients take a transport with callSingle; every Platform client carries one
+    const seen = new Set();
+    const findTransport = (o, d) => {
+      if (!o || typeof o !== "object" || seen.has(o) || d > 4) return null;
+      seen.add(o);
+      if (typeof o.transport?.callSingle === "function") return o.transport;
+      let ks; try { ks = Object.keys(o); } catch { return null; }
+      for (const k of ks) { let v; try { v = o[k]; } catch { continue; } const t = findTransport(v, d + 1); if (t) return t; }
+      return null;
+    };
+    const transport = findTransport(Spicetify.Platform, 0);
+    if (!transport) return retry();
+
+    const req = window[key].push([[Symbol()], {}, r => r]);
+    const mods = req.c
+      ? Object.values(req.c).map(m => m?.exports)
+      : Object.keys(req.m || {}).map(id => { try { return req(id); } catch { return null; } });
+    let WindowState, UpdateUi;
+    for (const exp of mods) {
+      if (!exp || (typeof exp !== "object" && typeof exp !== "function")) continue;
+      let values; try { values = Object.values(exp); } catch { continue; }
+      for (const v of values) {
+        if (typeof v !== "function") continue;
+        let id; try { id = v.SERVICE_ID; } catch { continue; }
+        if (id === "spotify.desktop.window_state_esperanto.proto.DesktopWindowState") WindowState = v;
+        if (id === "spotify.desktop.update_ui_esperanto.proto.DesktopUpdateUi") UpdateUi = v;
+      }
+      if (WindowState && UpdateUi) break;
+    }
+    if (!WindowState || !UpdateUi) return console.warn("[Obsidian] window services not found, keeping native window buttons");
+
+    const ws = new WindowState(transport), ui = new UpdateUi(transport);
+    const NORMAL = 1, MAXIMIZED = 2, MINIMIZED = 3;
+    const svg = d => `<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1"/></svg>`;
+    const ICON = {
+      min: svg("M0 5.5h10"),
+      max: svg("M.5 .5h9v9h-9z"),
+      restore: svg("M2.5 .5h7v7M.5 2.5h7v7h-7z"),
+      close: svg("M.5 .5l9 9M9.5 .5l-9 9")
+    };
+
+    const bar = document.createElement("div");
+    bar.id = "obs-winctl";
+    bar.innerHTML =
+      `<button type="button" data-act="min" aria-label="Minimieren">${ICON.min}</button>` +
+      `<button type="button" data-act="max" aria-label="Maximieren">${ICON.max}</button>` +
+      `<button type="button" data-act="close" aria-label="Schließen">${ICON.close}</button>`;
+    const maxBtn = bar.querySelector("[data-act=max]");
+    let state = NORMAL;
+    const setState = s => {
+      state = s;
+      const max = s === MAXIMIZED;
+      maxBtn.innerHTML = max ? ICON.restore : ICON.max;
+      maxBtn.setAttribute("aria-label", max ? "Wiederherstellen" : "Maximieren");
+    };
+    bar.addEventListener("click", e => {
+      const act = e.target.closest("button")?.dataset.act;
+      if (act === "min") ws.setWindowState({ state: MINIMIZED });
+      else if (act === "max") ws.setWindowState({ state: state === MAXIMIZED ? NORMAL : MAXIMIZED });
+      else if (act === "close") ws.closeWindow({});
+    });
+    document.body.appendChild(bar);
+    ws.getWindowState({}).then(r => setState(r.state), () => {});
+    try { ws.subscribeWindowState({}, r => { if (r.state !== MINIMIZED) setState(r.state); }); } catch {}
+
+    // Spotify toggles its native buttons itself (fullscreen, cinema mode): keep them hidden and mirror the wish on ours
+    const orig = UpdateUi.prototype.setButtonsVisibility;
+    UpdateUi.prototype.setButtonsVisibility = function (msg, opts) {
+      bar.hidden = msg?.showButtons === false;
+      return orig.call(this, { ...msg, showButtons: false }, opts);
+    };
+    ui.setButtonsVisibility({ showButtons: !document.fullscreenElement });
+  }
+
+  start();
+  windowControls();
+  if (OPTS.coverHeader) coverHeader();
+})();
