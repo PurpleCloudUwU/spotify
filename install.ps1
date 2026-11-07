@@ -11,7 +11,14 @@ $themes = Join-Path (Split-Path (spicetify -c)) 'Themes'
 New-Item -ItemType Directory -Force "$themes\Obsidian" | Out-Null
 Copy-Item "$PSScriptRoot\Obsidian\*" "$themes\Obsidian\" -Force
 spicetify config current_theme Obsidian color_scheme Obsidian inject_css 1 replace_colors 1 inject_theme_js 1
-spicetify backup apply
+# "backup apply" macht nichts, wenn schon eine Sicherung existiert (Spicetify war schon installiert),
+# deshalb getrennt: Sicherung anlegen (gibt es eine, nur Warnung) und dann anwenden
+spicetify backup
+spicetify apply
+if ($LASTEXITCODE -ne 0) {
+    # Sicherung passt nicht zur installierten Spotify-Version (z. B. nach einem Spotify-Update)
+    spicetify restore backup apply
+}
 Write-Host "Fertig - Obsidian ist aktiv."
 
 # Optional: Helfer fuer "Farben aus Wallpaper" (kleiner Hintergrundprozess im Autostart, keine Admin-Rechte)

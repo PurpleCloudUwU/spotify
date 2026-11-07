@@ -16,8 +16,9 @@ Voraussetzung: Spotify-Desktop-Version von spotify.com (nicht die Microsoft-Stor
 
 ```powershell
 Copy-Item .\Obsidian "$env:APPDATA\spicetify\Themes\" -Recurse -Force
-spicetify config current_theme Obsidian color_scheme Obsidian inject_theme_js 1
-spicetify backup apply
+spicetify config current_theme Obsidian color_scheme Obsidian inject_css 1 replace_colors 1 inject_theme_js 1
+spicetify backup
+spicetify apply
 ```
 
 ## Einstellungen
@@ -49,3 +50,5 @@ powershell -ExecutionPolicy Bypass -File "$env:APPDATA\spicetify\Themes\Obsidian
 ```powershell
 spicetify backup apply
 ```
+
+Meldet Spicetify, dass die Sicherung nicht zur Spotify-Version passt: `spicetify restore backup apply`.
