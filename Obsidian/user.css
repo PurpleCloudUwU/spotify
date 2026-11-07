@@ -44,7 +44,9 @@
   --obs-accent: #a864f2;
   --obs-accent-fill: #8a2be2;
   --obs-accent-hi: #d9c2fb;
-  --obs-accent-soft: rgba(138, 43, 226, .16);
+  --obs-accent-hover: #9840ea;
+  --obs-accent-press: #7a22cc;
+  --obs-accent-soft: color-mix(in srgb, var(--obs-accent-fill) 16%, transparent);
   --obs-sans: "Geist", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   --obs-mono: "Geist Mono", ui-monospace, Consolas, monospace;
 }
@@ -73,16 +75,16 @@
 /* Filled violet buttons (play button, "Follow", primary actions): white icon instead of near-black */
 .encore-dark-theme .encore-bright-accent-set {
   --background-base: var(--obs-accent-fill);
-  --background-highlight: #9840ea;
-  --background-press: #7a22cc;
-  --background-elevated-base: #9840ea;
-  --background-elevated-highlight: #9840ea;
-  --background-elevated-press: #7a22cc;
+  --background-highlight: var(--obs-accent-hover);
+  --background-press: var(--obs-accent-press);
+  --background-elevated-base: var(--obs-accent-hover);
+  --background-elevated-highlight: var(--obs-accent-hover);
+  --background-elevated-press: var(--obs-accent-press);
   --text-base: #fff;
   --text-subdued: rgba(255, 255, 255, .8);
   --essential-base: #fff;
   --essential-bright-accent: #fff;
-  --decorative-subdued: #7a22cc;
+  --decorative-subdued: var(--obs-accent-press);
 }
 
 html {
@@ -94,7 +96,7 @@ body {
   font-family: var(--obs-sans);
   -webkit-font-smoothing: antialiased;
 }
-::selection { background: rgba(138, 43, 226, .45); }
+::selection { background: color-mix(in srgb, var(--obs-accent-fill) 45%, transparent); }
 
 /* ------------------------------------------------------------------ */
 /* Layout: transparent shell, glass panels, topo canvas behind         */
@@ -303,8 +305,8 @@ header[data-testid="topbar"] > div[style*="--background-base"] {
 }
 #global-nav-bar input:hover { border-color: rgba(255, 255, 255, .22) !important; }
 #global-nav-bar input:focus {
-  border-color: rgba(168, 100, 242, .55) !important;
-  box-shadow: 0 0 0 4px rgba(138, 43, 226, .16) !important;
+  border-color: color-mix(in srgb, var(--obs-accent) 55%, transparent) !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--obs-accent-fill) 16%, transparent) !important;
 }
 #global-nav-bar [data-testid="user-widget-link"] {
   background: var(--obs-glass) !important;
@@ -340,7 +342,7 @@ header[data-testid="topbar"] > div[style*="--background-base"] {
 
 /* Big play buttons glow */
 .e-10860-button-primary__inner.encore-bright-accent-set {
-  box-shadow: 0 0 0 1px rgba(138, 43, 226, .5), 0 8px 24px -8px rgba(138, 43, 226, .95);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--obs-accent-fill) 50%, transparent), 0 8px 24px -8px color-mix(in srgb, var(--obs-accent-fill) 95%, transparent);
   transition: background-color .15s, box-shadow .15s, transform .1s !important;
 }
 
@@ -364,14 +366,14 @@ header[data-testid="topbar"] > div[style*="--background-base"] {
 [data-testid="control-button-playpause"],
 [data-testid="control-button-playpause"] * {
   --background-base: var(--obs-accent-fill) !important;
-  --background-highlight: #9840ea !important;
-  --background-press: #7a22cc !important;
+  --background-highlight: var(--obs-accent-hover) !important;
+  --background-press: var(--obs-accent-press) !important;
   --text-base: #fff !important;
   --essential-base: #fff !important;
 }
 [data-testid="control-button-playpause"] {
   border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(138, 43, 226, .5), 0 6px 18px -6px rgba(138, 43, 226, .95);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--obs-accent-fill) 50%, transparent), 0 6px 18px -6px color-mix(in srgb, var(--obs-accent-fill) 95%, transparent);
 }
 [data-testid="control-button-playpause"] svg { fill: #fff !important; color: #fff !important; }
 
@@ -382,7 +384,7 @@ header[data-testid="topbar"] > div[style*="--background-base"] {
 }
 .progress-bar [data-testid="progress-bar-handle"] {
   background: #fff !important;
-  box-shadow: 0 0 0 3px rgba(138, 43, 226, .35), 0 0 12px rgba(138, 43, 226, .8) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--obs-accent-fill) 35%, transparent), 0 0 12px color-mix(in srgb, var(--obs-accent-fill) 80%, transparent) !important;
 }
 /* No smooth progress: a Marketplace snippet transitions --progress-bar-transform (registered @property) over 1s.
    A custom-property transition restyles on the main thread every vsync (165 Hz) and re-blurs the glass bar:
@@ -455,8 +457,8 @@ div.progress-bar.progress-bar { transition: none !important; }
   border-radius: 8px !important;
 }
 [data-tippy-root] [role="menu"] input[role="searchbox"]:focus {
-  border-color: rgba(168, 100, 242, .55);
-  box-shadow: 0 0 0 3px rgba(138, 43, 226, .16);
+  border-color: color-mix(in srgb, var(--obs-accent) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--obs-accent-fill) 16%, transparent);
   outline: none;
 }
 /* Hover tooltips */
@@ -471,11 +473,106 @@ div.progress-bar.progress-bar { transition: none !important; }
 /* Scrollbars                                                          */
 /* ------------------------------------------------------------------ */
 .os-theme-spotify .os-scrollbar-handle {
-  background: rgba(168, 100, 242, .28) !important;
+  background: color-mix(in srgb, var(--obs-accent) 28%, transparent) !important;
   border-radius: 99px !important;
 }
 .os-theme-spotify .os-scrollbar-handle:hover,
-.os-theme-spotify .os-scrollbar-handle:active { background: rgba(168, 100, 242, .55) !important; }
+.os-theme-spotify .os-scrollbar-handle:active { background: color-mix(in srgb, var(--obs-accent) 55%, transparent) !important; }
+
+/* ------------------------------------------------------------------ */
+/* Settings dialog (profile menu → Obsidian-Einstellungen, theme.js)   */
+/* ------------------------------------------------------------------ */
+#obs-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: min(560px, 80vw);
+  font-family: var(--obs-sans);
+  color: var(--obs-text);
+}
+#obs-settings h3 {
+  margin: 14px 0 4px;
+  font: 600 11px/1 var(--obs-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--obs-accent);
+}
+#obs-settings h3:first-child { margin-top: 0; }
+#obs-settings .obs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .03);
+  border: 1px solid var(--obs-line);
+}
+#obs-settings .obs-label { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#obs-settings .obs-label span { font-size: 14px; font-weight: 500; }
+#obs-settings .obs-label small { font-size: 12px; color: var(--obs-sub); }
+#obs-settings .obs-range { display: flex; align-items: center; gap: 12px; }
+#obs-settings input[type="range"] {
+  width: 180px;
+  accent-color: var(--obs-accent-fill);
+  cursor: pointer;
+}
+#obs-settings output {
+  min-width: 2.2em;
+  text-align: right;
+  font: 500 13px var(--obs-mono);
+  font-variant-numeric: tabular-nums;
+}
+#obs-settings .obs-color { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+#obs-settings .obs-swatch,
+#obs-settings .obs-pick {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--c);
+  border: 1px solid var(--obs-line-hi);
+  cursor: pointer;
+}
+#obs-settings .obs-swatch.on { box-shadow: 0 0 0 2px #121016, 0 0 0 4px var(--obs-accent); }
+/* custom colour: the native picker, drawn as a ring with the current colour */
+#obs-settings .obs-pick {
+  margin-left: 4px;
+  background: conic-gradient(from 0deg, #f87171, #facc15, #4ade80, #22d3ee, #818cf8, #e879f9, #f87171);
+}
+#obs-settings .obs-pick::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: var(--c);
+  pointer-events: none;
+}
+#obs-settings .obs-pick input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+#obs-settings .obs-hex {
+  width: 78px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--obs-line-hi);
+  background: var(--obs-field);
+  color: var(--obs-text);
+  font: 12px var(--obs-mono);
+  text-transform: lowercase;
+}
+#obs-settings .obs-hex:focus { outline: none; border-color: var(--obs-accent); }
+#obs-settings .obs-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+#obs-settings .obs-reset {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--obs-line-hi);
+  background: transparent;
+  color: var(--obs-text);
+  font: 500 13px var(--obs-sans);
+  cursor: pointer;
+}
+#obs-settings .obs-reset:hover { border-color: var(--obs-accent); color: var(--obs-accent-hi); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

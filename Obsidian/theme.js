@@ -5,14 +5,34 @@
     opacity: 0.6,      // canvas opacity
     size: 13,          // character size (px)
     speed: 0.045,      // animation speed
-    fps: 30,           // while the spotlight follows the mouse
-    idleFps: 30,       // otherwise (lower saves CPU, the slow drift looks the same at 12)
-    blurFps: 4,        // while Spotify has no focus
     spotlight: true,   // light cone that follows the mouse
-    color: "#615c6b",  // line colour
-    accent: "#9d4ff0", // every 5th line
     coverHeader: true  // blurred cover behind playlist/album headers (look: --obs-cover-* in user.css)
   };
+
+  /* User settings: profile picture menu → "Obsidian-Einstellungen". Stored in localStorage, applied live.
+     The defaults reproduce the stock theme exactly (CSS variables are only overridden when a value differs). */
+  const DEFAULTS = {
+    fps: 30,             // background fps while Spotify has focus
+    blurFps: 4,          // background fps without focus (0 = pause)
+    bg: "#09090b",       // base background colour
+    line: "#615c6b",     // contour lines
+    accentLine: "#9d4ff0", // every 5th contour line
+    accent: "#8a2be2"    // general accent colour (buttons, progress bar, highlights)
+  };
+  const settings = (() => {
+    const KEY = "obsidian:settings";
+    let cur;
+    try { cur = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || "{}") }; } catch { cur = { ...DEFAULTS }; }
+    return {
+      get: () => ({ ...cur }),
+      set(p) {
+        cur = { ...cur, ...p };
+        try { localStorage.setItem(KEY, JSON.stringify(cur)); } catch {}
+        applySettings(cur);
+      },
+      reset() { this.set({ ...DEFAULTS }); }
+    };
+  })();
 
   /* Topo background: contour lines of an animated 3D simplex noise field, drawn as monospace characters.
      topo(canvas, options) – the canvas sits fixed behind the content, the mouse creates a light cone.
@@ -106,7 +126,7 @@
     // A timer waits for the next frame, so the page does not wake up on every vsync (165 Hz) just to skip it.
     let timer = 0;
     function currentFps() {
-      if (!document.hasFocus()) return o.blurFps;
+      if (!document.hasFocus()) return o.blurFps; // 0 = paused until focus comes back
       const moving = si > 0.02 && (Math.abs(mx - sx) > 0.5 || Math.abs(my - sy) > 0.5 || Math.abs(son - si) > 0.01);
       return moving ? o.fps : o.idleFps;
     }
@@ -124,7 +144,9 @@
     }
     function schedule() {
       if (reduce.matches || document.hidden || raf || timer || ac.signal.aborted) return;
-      const wait = Math.max(0, 1000 / currentFps() - (performance.now() - last) - 4);
+      const fps = currentFps();
+      if (!(fps > 0)) return;
+      const wait = Math.max(0, 1000 / fps - (performance.now() - last) - 4);
       timer = setTimeout(() => { timer = 0; if (!document.hidden && !ac.signal.aborted) raf = requestAnimationFrame(frame); }, wait);
     }
     // wake up early when the mouse comes back, instead of waiting for the slow idle frame
@@ -156,7 +178,16 @@
     schedule();
     if (document.fonts) document.fonts.load(`${o.size}px ${o.font}`).then(() => { if (!signal.aborted) { buildAtlas(); render(); } });
 
-    return () => { ac.abort(); clearTimeout(rt); clearTimeout(timer); if (raf) cancelAnimationFrame(raf); raf = 0; timer = 0; };
+    return {
+      stop() { ac.abort(); clearTimeout(rt); clearTimeout(timer); if (raf) cancelAnimationFrame(raf); raf = 0; timer = 0; },
+      // change options live (fps, colours); new colours need a new glyph atlas
+      set(p) {
+        const recolor = p.color !== undefined && p.color !== o.color || p.accent !== undefined && p.accent !== o.accent;
+        Object.assign(o, p);
+        if (recolor && atlas) { buildAtlas(); render(); }
+        wake();
+      }
+    };
   }
 
   /* 3D simplex noise after Stefan Gustavson, with a seed */
@@ -210,12 +241,113 @@
     canvas.style.cssText = "position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none";
     canvas.style.opacity = String(OPTS.opacity);
     document.body.prepend(canvas);
-    topo(canvas, {
+    const s = settings.get();
+    topoCtl = topo(canvas, {
       font: '"Geist Mono", ui-monospace, monospace', size: OPTS.size,
-      color: OPTS.color, accent: OPTS.accent, every: 5,
+      color: s.line, accent: s.accentLine, every: 5,
       spot: OPTS.spotlight ? 180 : 0, spotGain: 0.5,
-      speed: OPTS.speed, fps: OPTS.fps, idleFps: OPTS.idleFps, blurFps: OPTS.blurFps, seed: 3
+      speed: OPTS.speed, fps: s.fps, idleFps: s.fps, blurFps: s.blurFps, seed: 3
     });
+  }
+
+  // ---------------------------------------------------------------- settings: apply
+  let topoCtl = null;
+  const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+  const rgbHex = c => "#" + c.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+  const mix = (h, to, f) => { const a = hexRgb(h), b = hexRgb(to); return rgbHex(a.map((v, i) => v + (b[i] - v) * f)); };
+  const isHex = v => /^#[0-9a-f]{6}$/i.test(v);
+
+  function applySettings(s) {
+    const root = document.documentElement.style;
+    const put = (vars, on) => {
+      for (const [k, v] of Object.entries(vars)) {
+        if (!on) { root.removeProperty(k); continue; }
+        root.setProperty(k, v);
+        if (k.startsWith("--spice-")) root.setProperty(k.replace("--spice-", "--spice-rgb-"), hexRgb(v).join(","));
+      }
+    };
+    // Accent: every violet in user.css and color.ini derives from these (shades match the stock palette for #8a2be2)
+    const a = isHex(s.accent) ? s.accent : DEFAULTS.accent;
+    const light = mix(a, "#ffffff", 0.3), hi = mix(a, "#ffffff", 0.75);
+    put({
+      "--obs-accent-fill": a, "--obs-accent": light, "--obs-accent-hi": hi,
+      "--obs-accent-hover": mix(a, "#ffffff", 0.1), "--obs-accent-press": mix(a, "#000000", 0.12),
+      "--spice-button": light, "--spice-button-active": a, "--spice-notification": a, "--spice-selected-row": hi
+    }, a.toLowerCase() !== DEFAULTS.accent);
+    const bg = isHex(s.bg) ? s.bg : DEFAULTS.bg;
+    put({ "--obs-bg-color": bg, "--spice-main": bg, "--spice-sidebar": bg, "--spice-player": bg }, bg.toLowerCase() !== DEFAULTS.bg);
+    topoCtl?.set({
+      fps: s.fps, idleFps: s.fps, blurFps: s.blurFps,
+      color: isHex(s.line) ? s.line : DEFAULTS.line, accent: isHex(s.accentLine) ? s.accentLine : DEFAULTS.accentLine
+    });
+  }
+
+  // ---------------------------------------------------------------- settings: profile menu + dialog
+  function settingsMenu(tries = 0) {
+    const S = window.Spicetify;
+    if (!S?.Menu?.Item || !S?.PopupModal) { if (tries < 120) setTimeout(() => settingsMenu(tries + 1), 500); return; }
+    const icon = `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14c.9 0 1.5-.7 1.5-1.5 0-.4-.2-.7-.4-1-.2-.3-.4-.6-.4-1 0-.8.7-1.5 1.5-1.5H12a3 3 0 0 0 3-3C15 3.6 11.9 1 8 1zM4 8.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm2-3a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm4 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm2 3a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>`;
+    new S.Menu.Item("Obsidian-Einstellungen", false, openSettings, icon).register();
+  }
+
+  function openSettings() {
+    const s = settings.get();
+    const el = document.createElement("div");
+    el.id = "obs-settings";
+    const color = (key, label, hint, presets = []) => `
+      <div class="obs-row">
+        <div class="obs-label"><span>${label}</span><small>${hint}</small></div>
+        <div class="obs-color">
+          ${presets.map(p => `<button type="button" class="obs-swatch" data-key="${key}" data-val="${p}" style="--c:${p}" aria-label="${p}"></button>`).join("")}
+          <label class="obs-pick" style="--c:${s[key]}"><input type="color" data-key="${key}" value="${s[key]}"></label>
+          <input type="text" class="obs-hex" data-key="${key}" value="${s[key]}" maxlength="7" spellcheck="false">
+        </div>
+      </div>`;
+    const range = (key, label, hint, min, max) => `
+      <div class="obs-row">
+        <div class="obs-label"><span>${label}</span><small>${hint}</small></div>
+        <div class="obs-range">
+          <input type="range" data-key="${key}" min="${min}" max="${max}" step="1" value="${s[key]}">
+          <output data-for="${key}">${s[key]}</output>
+        </div>
+      </div>`;
+    el.innerHTML = `
+      <h3>Hintergrund-Animation</h3>
+      ${range("fps", "FPS mit Fokus", "Spotify ist das aktive Fenster", 1, 60)}
+      ${range("blurFps", "FPS ohne Fokus", "anderes Fenster aktiv · 0 = pausiert", 0, 30)}
+      <h3>Hintergrund-Farben</h3>
+      ${color("bg", "Grundfarbe", "Fläche hinter Linien und Panels", ["#09090b", "#0b0d12", "#0d0a12", "#0f0b0b"])}
+      ${color("line", "Linien", "Höhenlinien", ["#615c6b", "#5a6478", "#6b6b6b"])}
+      ${color("accentLine", "Akzentlinien", "jede 5. Linie", ["#9d4ff0", "#4f8cf0", "#2bc4b0", "#f04f9d"])}
+      <h3>Farbe allgemein</h3>
+      ${color("accent", "Akzentfarbe", "Buttons, Fortschrittsbalken, Markierungen", ["#8a2be2", "#3b6fe0", "#0fa3a3", "#1db954", "#e0457b", "#e05a2b"])}
+      <div class="obs-actions"><button type="button" class="obs-reset">Standard wiederherstellen</button></div>`;
+
+    const sync = (key, val) => {
+      el.querySelectorAll(`[data-key="${key}"]:not(.obs-swatch)`).forEach(i => { if (i.value !== String(val)) i.value = val; });
+      el.querySelectorAll(`.obs-pick input[data-key="${key}"]`).forEach(i => i.parentElement.style.setProperty("--c", val));
+      el.querySelectorAll(`output[data-for="${key}"]`).forEach(o => o.textContent = val);
+      el.querySelectorAll(`.obs-swatch[data-key="${key}"]`).forEach(b => b.classList.toggle("on", b.dataset.val.toLowerCase() === String(val).toLowerCase()));
+    };
+    const commit = (key, raw) => {
+      const val = typeof DEFAULTS[key] === "number" ? Number(raw) : String(raw).trim().toLowerCase();
+      if (typeof val === "string" && !isHex(val)) return;
+      settings.set({ [key]: val });
+      sync(key, val);
+    };
+    Object.keys(DEFAULTS).forEach(k => sync(k, s[k]));
+    el.addEventListener("input", e => {
+      const k = e.target.dataset.key;
+      if (!k) return;
+      if (e.target.classList.contains("obs-hex")) { const v = e.target.value.startsWith("#") ? e.target.value : "#" + e.target.value; if (isHex(v)) commit(k, v); }
+      else commit(k, e.target.value);
+    });
+    el.addEventListener("click", e => {
+      const sw = e.target.closest(".obs-swatch");
+      if (sw) commit(sw.dataset.key, sw.dataset.val);
+      if (e.target.closest(".obs-reset")) { settings.reset(); Object.keys(DEFAULTS).forEach(k => sync(k, DEFAULTS[k])); }
+    });
+    Spicetify.PopupModal.display({ title: "Obsidian-Einstellungen", content: el, isLarge: true });
   }
   // Blurred cover behind entity headers. CSS cannot read the <img> src, so copy it into a layer
   // (#obs-cover-bg) at the top of the page section; user.css makes the colour layers transparent around it.
@@ -376,7 +508,9 @@
     ui.setButtonsVisibility({ showButtons: !document.fullscreenElement });
   }
 
+  applySettings(settings.get());
   start();
+  settingsMenu();
   windowControls();
   if (OPTS.coverHeader) coverHeader();
 })();
