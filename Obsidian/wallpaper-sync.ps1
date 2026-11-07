@@ -7,7 +7,11 @@
 #   wallpaper-sync.ps1 -Install    Autostart-Eintrag anlegen und Helfer sofort starten (keine Admin-Rechte noetig)
 #   wallpaper-sync.ps1 -Uninstall  Autostart-Eintrag, laufenden Helfer und Kopie entfernen
 #   wallpaper-sync.ps1             einmal abgleichen
-#   wallpaper-sync.ps1 -Watch      alle 5 s pruefen (so laeuft er im Autostart)
+#   wallpaper-sync.ps1 -Watch      Dauerbetrieb (so laeuft er im Autostart):
+#                                  - Wallpaper Engine laeuft: alle 5 s abgleichen
+#                                  - sonst nur auf Anfrage des Themes (Schalter "Farben aus Wallpaper" einschalten,
+#                                    Spotify-Start) ueber http://127.0.0.1:47139/sync; alle 5 s wird nur geprueft,
+#                                    ob Wallpaper Engine gestartet wurde
 param([switch]$Install, [switch]$Uninstall, [switch]$Watch)
 
 $ErrorActionPreference = 'Stop'
@@ -15,6 +19,7 @@ $xpui     = Join-Path $env:APPDATA 'Spotify\Apps\xpui'
 $imgName  = 'obsidian-wallpaper.jpg'
 $jsonName = 'obsidian-wallpaper.json'
 $lnk      = Join-Path ([Environment]::GetFolderPath('Startup')) 'Obsidian Wallpaper-Sync.lnk'
+$port     = 47139                                                               # muss zu theme.js passen
 $winPs    = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'   # System.Drawing gibt es nur dort
 
 # Wallpaper Engine leaves the Windows wallpaper alone. While it runs, use the preview image of the active
@@ -44,9 +49,9 @@ function Get-WallpaperEngineImage {
     return $null
 }
 
-function Get-Wallpaper {
-    $we = Get-WallpaperEngineImage
-    if ($we) { return $we }
+function Test-WallpaperEngine { [bool](Get-Process wallpaper64, wallpaper32 -ErrorAction SilentlyContinue) }
+
+function Get-WindowsWallpaper {
     $p = (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name WallPaper -ErrorAction SilentlyContinue).WallPaper
     if ($p -and (Test-Path -LiteralPath $p)) { return Get-Item -LiteralPath $p }
     $t = Join-Path $env:APPDATA 'Microsoft\Windows\Themes\TranscodedWallpaper'
@@ -56,9 +61,13 @@ function Get-Wallpaper {
 
 function Sync-Wallpaper {
     if (-not (Test-Path -LiteralPath $xpui)) { return }          # Spicetify (noch) nicht angewendet
-    $wp = Get-Wallpaper
+    $we = Test-WallpaperEngine
+    $wp = $null
+    if ($we) { $wp = Get-WallpaperEngineImage }
+    if (-not $wp) { $wp = Get-WindowsWallpaper }
     if (-not $wp) { return }
-    $v = '{0}-{1}-{2}' -f $wp.LastWriteTimeUtc.Ticks, $wp.Length, $wp.Directory.Name   # folder name: WE project id
+    # folder name: WE project id; we: tells the theme whether it has to keep polling
+    $v = '{0}-{1}-{2}-{3}' -f $wp.LastWriteTimeUtc.Ticks, $wp.Length, $wp.Directory.Name, [int]$we
     $jsonPath = Join-Path $xpui $jsonName
     $imgPath  = Join-Path $xpui $imgName
     if ((Test-Path -LiteralPath $imgPath) -and (Test-Path -LiteralPath $jsonPath)) {
@@ -80,7 +89,7 @@ function Sync-Wallpaper {
         Move-Item -LiteralPath $tmp -Destination $imgPath -Force
     } finally { $src.Dispose() }
     # JSON zuletzt schreiben: das Theme laedt das Bild erst, wenn sich der Stempel aendert
-    [IO.File]::WriteAllText($jsonPath, (@{ v = $v; file = $imgName } | ConvertTo-Json -Compress))
+    [IO.File]::WriteAllText($jsonPath, (@{ v = $v; file = $imgName; we = $we } | ConvertTo-Json -Compress))
 }
 
 function Stop-Watchers {
@@ -116,9 +125,41 @@ if ($Uninstall) {
 if ($Watch) {
     $mutex = New-Object System.Threading.Mutex($false, 'Local\ObsidianWallpaperSync')
     if (-not $mutex.WaitOne(0)) { return }                        # laeuft schon
+    # Tiny HTTP endpoint for the theme (TcpListener: needs no URL reservation/admin, unlike HttpListener)
+    $listener = $null; $accept = $null
+    try {
+        $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback), $port
+        $listener.Start()
+        $accept = $listener.AcceptTcpClientAsync()
+    } catch { $listener = $null }
+    $lastWe = $null
     while ($true) {
-        try { Sync-Wallpaper } catch {}
-        Start-Sleep -Seconds 5
+        $we = Test-WallpaperEngine
+        # Wallpaper Engine: follow it; otherwise only once when its state changes (start of the helper, WE closed)
+        if ($we -or $we -ne $lastWe) { try { Sync-Wallpaper } catch {} }
+        $lastWe = $we
+        if (-not $accept) { Start-Sleep -Seconds 5; continue }
+        # wait up to 5 s for a request from the theme instead of sleeping
+        if ($accept.Wait(5000)) {
+            $client = $null
+            try { $client = $accept.Result } catch {}
+            $accept = $listener.AcceptTcpClientAsync()
+            if ($client) {
+                try {
+                    $client.ReceiveTimeout = 2000
+                    $stream = $client.GetStream()
+                    $buf = New-Object byte[] 4096
+                    $n = $stream.Read($buf, 0, $buf.Length)
+                    $req = [Text.Encoding]::ASCII.GetString($buf, 0, $n)
+                    if ($req -match '^GET /sync') { try { Sync-Wallpaper } catch {} }
+                    $resp = "HTTP/1.1 200 OK`r`nAccess-Control-Allow-Origin: *`r`nAccess-Control-Allow-Private-Network: true`r`n" +
+                            "Access-Control-Allow-Methods: GET`r`nContent-Type: text/plain`r`nContent-Length: 2`r`nConnection: close`r`n`r`nok"
+                    $bytes = [Text.Encoding]::ASCII.GetBytes($resp)
+                    $stream.Write($bytes, 0, $bytes.Length)
+                    $stream.Flush()
+                } catch {} finally { $client.Close() }
+            }
+        }
     }
 }
 

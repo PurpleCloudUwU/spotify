@@ -38,9 +38,10 @@
   /* Wallpaper colours. Spotify's page (https://xpui.app.spotify.com) cannot read local files, but it serves
      %APPDATA%\Spotify\Apps\xpui live. wallpaper-sync.ps1 (autostart) drops a small copy of the desktop wallpaper there
      (obsidian-wallpaper.jpg + obsidian-wallpaper.json with a version stamp); this reads the dominant hue from it.
-     Checked when Spotify gets focus and every 15 s while visible – a tiny same-origin fetch. */
+     Every 15 s only while Wallpaper Engine runs; otherwise on focus and when the option is switched on. */
   const wallpaper = (() => {
     const KEY = "obsidian:wallpaper", ALGO = 2; // bump ALGO when extract() changes, cached palettes are then recomputed
+    const HELPER_PORT = 47139;                   // must match $port in wallpaper-sync.ps1
     let state = null, status = "idle", busy = false, timer = 0;
     try { state = JSON.parse(localStorage.getItem(KEY) || "null"); } catch {}
     const listeners = new Set();
@@ -101,10 +102,17 @@
       });
     }
 
-    async function check() {
-      if (busy || document.hidden || !settings.get().wallpaper) return;
+    // askHelper: ask wallpaper-sync.ps1 to re-read the wallpaper first (switching the option on, Spotify start).
+    // Without Wallpaper Engine the helper does not poll, so this is how a new Windows wallpaper gets picked up.
+    async function check(askHelper = false) {
+      if (busy || !settings.get().wallpaper || (!askHelper && document.hidden)) return;
       busy = true;
       if (status === "idle") { status = "loading"; notify(); }
+      let helper = true;
+      if (askHelper) {
+        try { await fetch(`http://127.0.0.1:${HELPER_PORT}/sync`, { cache: "no-store", signal: AbortSignal.timeout(8000) }); }
+        catch { helper = false; }
+      }
       try {
         const r = await fetch("/obsidian-wallpaper.json", { cache: "no-store" });
         if (!r.ok) throw new Error("no wallpaper info");
@@ -115,22 +123,27 @@
           try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
           applySettings(settings.get());
         }
-        status = "ok";
+        // keep polling only while Wallpaper Engine runs (it can switch at any time); a static wallpaper is read on request
+        live = info.we === true;
+        if (live && !timer) timer = setInterval(() => check(), 15000);
+        if (!live && timer) { clearInterval(timer); timer = 0; }
+        status = helper ? "ok" : "missing";
       } catch { status = "missing"; }
       busy = false;
       notify();
     }
+    let live = false;
     function enable(on) {
       clearInterval(timer); timer = 0;
       if (!on) { status = "idle"; notify(); return; }
-      timer = setInterval(check, 15000);
-      check();
+      check(true);
     }
+    // a cheap look at the version stamp on focus, so a freshly started Wallpaper Engine is noticed
     addEventListener("focus", () => check());
-    document.addEventListener("visibilitychange", () => check());
     return {
       palette: () => state?.palette || null,
       status: () => status,
+      live: () => live,
       enable,
       onChange(f) { listeners.add(f); return () => listeners.delete(f); }
     };
@@ -446,7 +459,8 @@
     const STATUS = {
       off: "Grundfarbe, Linien und Akzentfarbe folgen dem Desktop-Hintergrund",
       idle: "wird gelesen …", loading: "wird gelesen …",
-      ok: "aktiv · Farbton aus dem aktuellen Wallpaper",
+      ok: "aktiv · Windows-Wallpaper · nach einem Wechsel aus- und wieder einschalten",
+      live: "aktiv · folgt Wallpaper Engine automatisch",
       missing: "Wallpaper-Helfer läuft nicht · wallpaper-sync.ps1 -Install ausführen"
     };
     const refresh = () => {
@@ -454,7 +468,7 @@
       Object.keys(DEFAULTS).forEach(k => sync(k, eff[k]));
       el.classList.toggle("wp-on", cur.wallpaper);
       const st = el.querySelector(".obs-wp-status");
-      st.textContent = cur.wallpaper ? STATUS[wallpaper.status()] : STATUS.off;
+      st.textContent = cur.wallpaper ? STATUS[wallpaper.status() === "ok" && wallpaper.live() ? "live" : wallpaper.status()] : STATUS.off;
       st.classList.toggle("warn", cur.wallpaper && wallpaper.status() === "missing");
     };
     const off = wallpaper.onChange(() => { if (!el.isConnected) return off(); refresh(); });
