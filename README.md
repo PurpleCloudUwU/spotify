@@ -41,7 +41,7 @@ powershell -ExecutionPolicy Bypass -File "$env:APPDATA\spicetify\Themes\Obsidian
 powershell -ExecutionPolicy Bypass -File "$env:APPDATA\spicetify\Themes\Obsidian\wallpaper-sync.ps1" -Uninstall  # entfernen
 ```
 
-Ein neues Wallpaper wird übernommen, sobald Spotify den Fokus bekommt (spätestens nach einer Minute). Statische Wallpaper werden unterstützt (auch das Spanning-Bild von Dual Monitor Tools). Animierte Wallpaper aus Wallpaper Engine können nicht ausgelesen werden.
+Ein neues Wallpaper wird übernommen, sobald Spotify den Fokus bekommt (spätestens nach einer Minute). Läuft Wallpaper Engine, nimmt der Helfer das Vorschaubild des gerade aktiven Wallpapers (bei mehreren Monitoren das des ersten), sonst das normale Windows-Wallpaper.
 
 ## Nach einem Spotify-Update
 
