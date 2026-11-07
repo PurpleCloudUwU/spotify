@@ -12,7 +12,8 @@
 #                                  - sonst nur auf Anfrage des Themes (Schalter "Farben aus Wallpaper" einschalten,
 #                                    Spotify-Start) ueber http://127.0.0.1:47139/sync; alle 5 s wird nur geprueft,
 #                                    ob Wallpaper Engine gestartet wurde
-param([switch]$Install, [switch]$Uninstall, [switch]$Watch)
+#   wallpaper-sync.ps1 -Diagnose   zeigt, wo nach dem Wallpaper gesucht wird und was gefunden wurde
+param([switch]$Install, [switch]$Uninstall, [switch]$Watch, [switch]$Diagnose)
 
 $ErrorActionPreference = 'Stop'
 $xpui     = Join-Path $env:APPDATA 'Spotify\Apps\xpui'
