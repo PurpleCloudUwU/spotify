@@ -26,17 +26,31 @@ $winPs    = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.ex
 # Wallpaper Engine leaves the Windows wallpaper alone. While it runs, use the preview image of the active
 # wallpaper (config.json next to wallpaper32/64.exe -> wallpaperconfig.selectedwallpapers -> project folder -> preview).
 # Regex instead of ConvertFrom-Json: config.json can contain keys that only differ in case, which PowerShell 5 rejects.
-function Get-WallpaperEngineImage {
+function Get-WallpaperEngineConfig {
     $proc = Get-Process wallpaper64, wallpaper32 -ErrorAction SilentlyContinue | Where-Object Path | Select-Object -First 1
     if (-not $proc) { return $null }
-    $cfg = Join-Path (Split-Path $proc.Path) 'config.json'
-    if (-not (Test-Path -LiteralPath $cfg)) { return $null }
+    return Join-Path (Split-Path $proc.Path) 'config.json'
+}
+
+# all project folders of the active wallpapers (one "wallpaperconfig" per user profile, one entry per monitor);
+# "wallpaperconfigrecent" is not matched (different key). Tolerates one nesting level and other keys before "file".
+function Get-WallpaperEngineDirs([string]$cfg) {
+    if (-not $cfg -or -not (Test-Path -LiteralPath $cfg)) { return @() }
     $text = [IO.File]::ReadAllText($cfg)
-    $m = [regex]::Match($text, '"wallpaperconfig"\s*:\s*\{[^{}]*"selectedwallpapers"\s*:\s*\{\s*"[^"]+"\s*:\s*\{\s*"file"\s*:\s*"((?:[^"\\]|\\.)+)"')
-    if (-not $m.Success) { return $null }
-    $file = [regex]::Unescape($m.Groups[1].Value)
-    $dir = Split-Path $file
-    if (-not (Test-Path -LiteralPath $dir)) { return $null }
+    $rx = '"wallpaperconfig"\s*:\s*\{(?:[^{}]|\{[^{}]*\})*?"selectedwallpapers"\s*:\s*\{\s*"[^"]+"\s*:\s*\{[^{}]*?"file"\s*:\s*"((?:[^"\\]|\\.)+)"'
+    @([regex]::Matches($text, $rx) | ForEach-Object { Split-Path ([regex]::Unescape($_.Groups[1].Value)) })
+}
+
+function Get-WallpaperEngineImage {
+    foreach ($dir in (Get-WallpaperEngineDirs (Get-WallpaperEngineConfig))) {
+        if (-not (Test-Path -LiteralPath $dir)) { continue }
+        $img = Get-ProjectPreview $dir
+        if ($img) { return $img }
+    }
+    return $null
+}
+
+function Get-ProjectPreview([string]$dir) {
     $names = @()
     $proj = Join-Path $dir 'project.json'
     if (Test-Path -LiteralPath $proj) {
@@ -55,8 +69,13 @@ function Test-WallpaperEngine { [bool](Get-Process wallpaper64, wallpaper32 -Err
 function Get-WindowsWallpaper {
     $p = (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name WallPaper -ErrorAction SilentlyContinue).WallPaper
     if ($p -and (Test-Path -LiteralPath $p)) { return Get-Item -LiteralPath $p }
+    $s = (Get-ItemProperty 'HKCU:\Software\Microsoft\Internet Explorer\Desktop\General' -Name WallpaperSource -ErrorAction SilentlyContinue).WallpaperSource
+    if ($s -and (Test-Path -LiteralPath $s)) { return Get-Item -LiteralPath $s }
     $t = Join-Path $env:APPDATA 'Microsoft\Windows\Themes\TranscodedWallpaper'
     if (Test-Path -LiteralPath $t) { return Get-Item -LiteralPath $t }
+    $c = Get-ChildItem -LiteralPath (Join-Path $env:APPDATA 'Microsoft\Windows\Themes\CachedFiles') -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($c) { return $c }
     return $null
 }
 
@@ -122,6 +141,39 @@ if ($Uninstall) {
     Remove-Item -LiteralPath $lnk -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $xpui $imgName), (Join-Path $xpui $jsonName) -ErrorAction SilentlyContinue
     Write-Host 'Wallpaper-Sync entfernt.'
+    return
+}
+
+if ($Diagnose) {
+    function D($k, $v) { Write-Host ('{0,-26}{1}' -f $k, $v) }
+    $cfg = Get-WallpaperEngineConfig
+    D 'WE config.json:' $(if ($cfg) { "$cfg (da: $(Test-Path -LiteralPath $cfg))" } else { 'WE laeuft nicht' })
+    if ($cfg -and (Test-Path -LiteralPath $cfg)) {
+        $raw = [IO.File]::ReadAllText($cfg)
+        D '  "wallpaperconfig":' ([regex]::Matches($raw, '"wallpaperconfig"\s*:').Count)
+        $dirs = @(Get-WallpaperEngineDirs $cfg)
+        D '  Treffer:' $dirs.Count
+        foreach ($d in $dirs) {
+            D '  Projekt:' "$d (da: $(Test-Path -LiteralPath $d))"
+            if (Test-Path -LiteralPath $d) {
+                D '    Dateien:' ((Get-ChildItem -LiteralPath $d -File | Select-Object -First 12 -ExpandProperty Name) -join ', ')
+                D '    Vorschau:' $(Get-ProjectPreview $d)
+            }
+        }
+        if ($dirs.Count -eq 0) {
+            $i = $raw.IndexOf('"wallpaperconfig"')
+            if ($i -ge 0) { Write-Host '  Ausschnitt:'; Write-Host ($raw.Substring($i, [Math]::Min(600, $raw.Length - $i)) -replace '(?m)^', '    ') }
+        }
+    }
+    D 'Registry WallPaper:' (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name WallPaper -ErrorAction SilentlyContinue).WallPaper
+    D 'WallpaperSource:' (Get-ItemProperty 'HKCU:\Software\Microsoft\Internet Explorer\Desktop\General' -Name WallpaperSource -ErrorAction SilentlyContinue).WallpaperSource
+    D 'TranscodedWallpaper:' (Test-Path -LiteralPath (Join-Path $env:APPDATA 'Microsoft\Windows\Themes\TranscodedWallpaper'))
+    D 'CachedFiles:' ((Get-ChildItem -LiteralPath (Join-Path $env:APPDATA 'Microsoft\Windows\Themes\CachedFiles') -File -ErrorAction SilentlyContinue).Name -join ', ')
+    $we = Test-WallpaperEngine
+    $wp = $null; if ($we) { $wp = Get-WallpaperEngineImage }
+    D 'Quelle WE:' $wp
+    if (-not $wp) { $wp = Get-WindowsWallpaper; D 'Quelle Windows:' $wp }
+    D 'Ergebnis:' $(if ($wp) { $wp.FullName } else { 'NICHTS GEFUNDEN' })
     return
 }
 
