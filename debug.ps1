@@ -65,6 +65,12 @@ if ($busy) { Line '  belegt von:' ((Get-Process -Id $busy.OwningProcess -ErrorAc
 Line 'Kopie vorher:' (Get-Content -LiteralPath $json -ErrorAction SilentlyContinue)
 
 Write-Host ''
+Write-Host '=== Wallpaper-Suche'
+if (Test-Path -LiteralPath $t) {
+    & $winPs -NoProfile -ExecutionPolicy Bypass -File $t -Diagnose 2>&1 | ForEach-Object { Write-Host "  $_" }
+}
+
+Write-Host ''
 Write-Host '=== Einmal-Lauf (Fehler erscheinen hier)'
 if (Test-Path -LiteralPath $t) {
     & $winPs -NoProfile -ExecutionPolicy Bypass -File $t 2>&1 | ForEach-Object { Write-Host "  $_" }
