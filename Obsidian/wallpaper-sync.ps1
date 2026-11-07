@@ -32,13 +32,39 @@ function Get-WallpaperEngineConfig {
     return Join-Path (Split-Path $proc.Path) 'config.json'
 }
 
+# index of the "}" closing the object whose "{" is at $open (skips braces inside strings)
+function Get-ObjectEnd([string]$text, [int]$open) {
+    $depth = 0; $inStr = $false
+    for ($i = $open; $i -lt $text.Length; $i++) {
+        $c = $text[$i]
+        if ($inStr) { if ($c -eq '\') { $i++ } elseif ($c -eq '"') { $inStr = $false }; continue }
+        if ($c -eq '"') { $inStr = $true }
+        elseif ($c -eq '{') { $depth++ }
+        elseif ($c -eq '}') { $depth--; if ($depth -eq 0) { return $i } }
+    }
+    return $text.Length - 1
+}
+
 # all project folders of the active wallpapers (one "wallpaperconfig" per user profile, one entry per monitor);
-# "wallpaperconfigrecent" is not matched (different key). Tolerates one nesting level and other keys before "file".
+# "wallpaperconfigrecent" is not matched (different key). Braces are counted, so any nesting
+# (e.g. "profile": {"groups": {}}) and any key order work.
 function Get-WallpaperEngineDirs([string]$cfg) {
     if (-not $cfg -or -not (Test-Path -LiteralPath $cfg)) { return @() }
     $text = [IO.File]::ReadAllText($cfg)
-    $rx = '"wallpaperconfig"\s*:\s*\{(?:[^{}]|\{[^{}]*\})*?"selectedwallpapers"\s*:\s*\{\s*"[^"]+"\s*:\s*\{[^{}]*?"file"\s*:\s*"((?:[^"\\]|\\.)+)"'
-    @([regex]::Matches($text, $rx) | ForEach-Object { Split-Path ([regex]::Unescape($_.Groups[1].Value)) })
+    $dirs = @()
+    foreach ($wc in [regex]::Matches($text, '"wallpaperconfig"\s*:\s*\{')) {
+        $wcOpen = $wc.Index + $wc.Length - 1
+        $wcEnd = Get-ObjectEnd $text $wcOpen
+        $sw = [regex]::new('"selectedwallpapers"\s*:\s*\{').Match($text, $wcOpen)
+        if (-not $sw.Success -or $sw.Index -gt $wcEnd) { continue }
+        $swOpen = $sw.Index + $sw.Length - 1
+        $body = $text.Substring($swOpen, (Get-ObjectEnd $text $swOpen) - $swOpen + 1)
+        foreach ($f in [regex]::Matches($body, '"file"\s*:\s*"((?:[^"\\]|\\.)+)"')) {
+            $d = Split-Path ([regex]::Unescape($f.Groups[1].Value))
+            if ($dirs -notcontains $d) { $dirs += $d }
+        }
+    }
+    return $dirs
 }
 
 function Get-WallpaperEngineImage {
