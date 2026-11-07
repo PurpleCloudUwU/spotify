@@ -106,9 +106,11 @@ if ($Install) {
     $sc.TargetPath = $target
     $sc.Arguments = $args_
     $sc.WindowStyle = 7
+    $sc.WorkingDirectory = $PSScriptRoot
     $sc.Description = 'Obsidian Spicetify-Theme: Wallpaper-Farben'
     $sc.Save()
-    Start-Process -FilePath $target -ArgumentList $args_ -WindowStyle Hidden
+    # fixed working directory: otherwise the helper keeps the folder install.ps1 was started from busy (undeletable)
+    Start-Process -FilePath $target -ArgumentList $args_ -WindowStyle Hidden -WorkingDirectory $PSScriptRoot
     Write-Host "Wallpaper-Sync eingerichtet (Autostart: $lnk)."
     Write-Host "In Spotify: Profilbild -> Obsidian-Einstellungen -> 'Farben aus Wallpaper' einschalten."
     return
