@@ -38,7 +38,7 @@
   /* Wallpaper colours. Spotify's page (https://xpui.app.spotify.com) cannot read local files, but it serves
      %APPDATA%\Spotify\Apps\xpui live. wallpaper-sync.ps1 (autostart) drops a small copy of the desktop wallpaper there
      (obsidian-wallpaper.jpg + obsidian-wallpaper.json with a version stamp); this reads the dominant hue from it.
-     Every 15 s only while Wallpaper Engine runs; otherwise on focus and when the option is switched on. */
+     Every 15 s while Wallpaper Engine runs, otherwise every 60 s (stamp only) plus on focus and when switched on. */
   const wallpaper = (() => {
     const KEY = "obsidian:wallpaper", ALGO = 2; // bump ALGO when extract() changes, cached palettes are then recomputed
     const HELPER_PORT = 47139;                   // must match $port in wallpaper-sync.ps1
@@ -123,18 +123,19 @@
           try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
           applySettings(settings.get());
         }
-        // keep polling only while Wallpaper Engine runs (it can switch at any time); a static wallpaper is read on request
+        // Wallpaper Engine can switch at any time: every 15 s. Otherwise the helper is idle and a static wallpaper is
+        // read on request; a slow look at the stamp (60 s) only notices Wallpaper Engine starting again.
         live = info.we === true;
-        if (live && !timer) timer = setInterval(() => check(), 15000);
-        if (!live && timer) { clearInterval(timer); timer = 0; }
+        const every = live ? 15000 : 60000;
+        if (timerEvery !== every) { clearInterval(timer); timer = setInterval(() => check(), every); timerEvery = every; }
         status = helper ? "ok" : "missing";
       } catch { status = "missing"; }
       busy = false;
       notify();
     }
-    let live = false;
+    let live = false, timerEvery = 0;
     function enable(on) {
-      clearInterval(timer); timer = 0;
+      clearInterval(timer); timer = 0; timerEvery = 0;
       if (!on) { status = "idle"; notify(); return; }
       check(true);
     }
