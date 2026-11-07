@@ -126,7 +126,9 @@ if ($Uninstall) {
 
 if ($Watch) {
     $mutex = New-Object System.Threading.Mutex($false, 'Local\ObsidianWallpaperSync')
-    if (-not $mutex.WaitOne(0)) { return }                        # laeuft schon
+    # a killed predecessor leaves the mutex "abandoned": .NET then throws, but we own it anyway
+    try { $own = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $own = $true }
+    if (-not $own) { return }                                     # laeuft schon
     # Tiny HTTP endpoint for the theme (TcpListener: needs no URL reservation/admin, unlike HttpListener)
     $listener = $null; $accept = $null
     try {

@@ -45,6 +45,10 @@ powershell -ExecutionPolicy Bypass -File "$env:APPDATA\spicetify\Themes\Obsidian
 - **Wallpaper Engine läuft:** Der Helfer nimmt das Vorschaubild des aktiven Wallpapers (bei mehreren Monitoren das des ersten) und folgt Wechseln automatisch, nach spätestens etwa 20 Sekunden. Wallpaper Engine speichert einen Wechsel selbst manchmal mit etwas Verzögerung.
 - **Sonst (normales Windows-Wallpaper):** Der Helfer prüft nicht ständig. Nach einem Wallpaper-Wechsel „Farben aus Wallpaper“ einmal aus- und wieder einschalten, beim Spotify-Start passiert das automatisch. Das Theme fragt den Helfer dafür lokal über `http://127.0.0.1:47139` an. Startet Wallpaper Engine wieder, bemerkt Spotify das nach spätestens einer Minute.
 
+### Fehlersuche
+
+Zeigt der Dialog „Wallpaper-Helfer läuft nicht“: `debug.ps1` per Rechtsklick → „Mit PowerShell ausführen“ (Spotify dabei offen lassen). Das Skript ändert nichts, prüft Theme, Helfer und Port und speichert das Ergebnis als `obsidian-debug.txt` auf dem Desktop.
+
 ## Nach einem Spotify-Update
 
 ```powershell
