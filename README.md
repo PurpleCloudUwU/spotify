@@ -28,7 +28,20 @@ Profilbild oben rechts anklicken → **Obsidian-Einstellungen**. Änderungen wir
 - **Hintergrund-Farben:** Grundfarbe, Linien, Akzentlinien (jede 5. Linie)
 - **Farbe allgemein:** Akzentfarbe für Buttons, Fortschrittsbalken und Markierungen
 
+- **Wallpaper:** „Farben aus Wallpaper“ nimmt Grundfarbe, Linien und Akzentfarbe aus dem Farbton deines Desktop-Hintergrunds
+
 „Standard wiederherstellen“ setzt alles auf die Theme-Werte zurück.
+
+### Farben aus Wallpaper
+
+Spotify darf keine Dateien von der Festplatte lesen. Deshalb legt ein kleiner Helfer (`wallpaper-sync.ps1`) eine verkleinerte Kopie des Wallpapers in Spotifys App-Ordner und aktualisiert sie, wenn du das Wallpaper wechselst. Er läuft unsichtbar im Autostart und braucht keine Admin-Rechte. `install.ps1` fragt am Ende, ob er eingerichtet werden soll. Nachträglich geht es so:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:APPDATA\spicetify\Themes\Obsidian\wallpaper-sync.ps1" -Install    # einrichten
+powershell -ExecutionPolicy Bypass -File "$env:APPDATA\spicetify\Themes\Obsidian\wallpaper-sync.ps1" -Uninstall  # entfernen
+```
+
+Ein neues Wallpaper wird übernommen, sobald Spotify den Fokus bekommt (spätestens nach einer Minute). Statische Wallpaper werden unterstützt (auch das Spanning-Bild von Dual Monitor Tools). Animierte Wallpaper aus Wallpaper Engine können nicht ausgelesen werden.
 
 ## Nach einem Spotify-Update
 

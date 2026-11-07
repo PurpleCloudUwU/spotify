@@ -13,3 +13,9 @@ Copy-Item "$PSScriptRoot\Obsidian\*" "$themes\Obsidian\" -Force
 spicetify config current_theme Obsidian color_scheme Obsidian inject_css 1 replace_colors 1 inject_theme_js 1
 spicetify backup apply
 Write-Host "Fertig - Obsidian ist aktiv."
+
+# Optional: Helfer fuer "Farben aus Wallpaper" (kleiner Hintergrundprozess im Autostart, keine Admin-Rechte)
+$answer = Read-Host "Wallpaper-Farben-Helfer einrichten? Damit kann das Theme die Farben aus deinem Desktop-Hintergrund nehmen. (j/N)"
+if ($answer -match '^(j|ja|y|yes)$') {
+    & "$themes\Obsidian\wallpaper-sync.ps1" -Install
+}

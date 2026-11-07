@@ -17,7 +17,8 @@
     bg: "#09090b",       // base background colour
     line: "#615c6b",     // contour lines
     accentLine: "#9d4ff0", // every 5th contour line
-    accent: "#8a2be2"    // general accent colour (buttons, progress bar, highlights)
+    accent: "#8a2be2",   // general accent colour (buttons, progress bar, highlights)
+    wallpaper: false     // take bg/line/accentLine/accent from the desktop wallpaper (needs wallpaper-sync.ps1)
   };
   const settings = (() => {
     const KEY = "obsidian:settings";
@@ -30,9 +31,112 @@
         try { localStorage.setItem(KEY, JSON.stringify(cur)); } catch {}
         applySettings(cur);
       },
-      reset() { this.set({ ...DEFAULTS }); }
+      reset() { this.set({ ...DEFAULTS }); wallpaper.enable(false); }
     };
   })();
+
+  /* Wallpaper colours. Spotify's page (https://xpui.app.spotify.com) cannot read local files, but it serves
+     %APPDATA%\Spotify\Apps\xpui live. wallpaper-sync.ps1 (autostart) drops a small copy of the desktop wallpaper there
+     (obsidian-wallpaper.jpg + obsidian-wallpaper.json with a version stamp); this reads the dominant hue from it.
+     Checked when Spotify gets focus and once a minute while visible – a tiny same-origin fetch. */
+  const wallpaper = (() => {
+    const KEY = "obsidian:wallpaper", ALGO = 2; // bump ALGO when extract() changes, cached palettes are then recomputed
+    let state = null, status = "idle", busy = false, timer = 0;
+    try { state = JSON.parse(localStorage.getItem(KEY) || "null"); } catch {}
+    const listeners = new Set();
+    const notify = () => listeners.forEach(f => f());
+
+    const hsl = (h, s, l) => {
+      const f = n => { const k = (n + h / 30) % 12, a = s * Math.min(l, 1 - l); return 255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))); };
+      return rgbHex([f(0), f(8), f(4)]);
+    };
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+    function extract(url) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onerror = () => reject(new Error("wallpaper image failed"));
+        img.onload = () => {
+          const W = 96, H = Math.max(1, Math.round(W * img.naturalHeight / img.naturalWidth));
+          const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+          const ctx = cv.getContext("2d", { willReadFrequently: true });
+          ctx.drawImage(img, 0, 0, W, H);
+          const d = ctx.getImageData(0, 0, W, H).data;
+          // hue histogram (10° bins), weighted by chroma; dark and grey pixels do not vote
+          const bw = new Float64Array(36), br = new Float64Array(36), bgc = new Float64Array(36), bb = new Float64Array(36);
+          let total = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
+            const max = Math.max(r, g, b), min = Math.min(r, g, b), c = max - min;
+            if (max < 0.08 || c < 0.02) continue;   // near-black and pure grey pixels do not vote; faint tints do
+            let h = max === r ? ((g - b) / c) % 6 : max === g ? (b - r) / c + 2 : (r - g) / c + 4;
+            h = (h * 60 + 360) % 360;
+            const k = Math.floor(h / 10) % 36;
+            bw[k] += c; br[k] += r * c; bgc[k] += g * c; bb[k] += b * c; total += c;
+          }
+          const px = d.length / 4;
+          // almost no colour in the picture: neutral greys, keep the stock accent
+          if (total / px < 0.004) return resolve({ bg: "#0a0a0b", line: "#5f5f66", accentLine: DEFAULTS.accentLine, accent: DEFAULTS.accent });
+          let best = 0, bestW = -1;
+          for (let k = 0; k < 36; k++) {
+            const w = bw[(k + 35) % 36] * 0.5 + bw[k] + bw[(k + 1) % 36] * 0.5;
+            if (w > bestW) { bestW = w; best = k; }
+          }
+          let R = 0, G = 0, B = 0, Wt = 0;
+          for (const k of [(best + 35) % 36, best, (best + 1) % 36]) { R += br[k]; G += bgc[k]; B += bb[k]; Wt += bw[k]; }
+          R /= Wt; G /= Wt; B /= Wt;
+          const max = Math.max(R, G, B), min = Math.min(R, G, B), c = max - min, l = (max + min) / 2;
+          const s = c === 0 ? 0 : c / (1 - Math.abs(2 * l - 1));
+          let h = c === 0 ? 0 : max === R ? ((G - B) / c) % 6 : max === G ? (B - R) / c + 2 : (R - G) / c + 4;
+          h = (h * 60 + 360) % 360;
+          // same lightness/saturation structure as the stock palette, only the hue (and a bit of the saturation) follows the wallpaper
+          resolve({
+            bg: hsl(h, 0.2, 0.045),
+            line: hsl(h, 0.1, 0.39),
+            accentLine: hsl(h, clamp(s, 0.55, 0.85), 0.62),
+            accent: hsl(h, clamp(s, 0.5, 0.8), 0.5)
+          });
+        };
+        img.src = url;
+      });
+    }
+
+    async function check() {
+      if (busy || document.hidden || !settings.get().wallpaper) return;
+      busy = true;
+      if (status === "idle") { status = "loading"; notify(); }
+      try {
+        const r = await fetch("/obsidian-wallpaper.json", { cache: "no-store" });
+        if (!r.ok) throw new Error("no wallpaper info");
+        const info = await r.json();
+        if (state?.v !== info.v || state.algo !== ALGO || !state.palette) {
+          const palette = await extract(`/${info.file}?v=${encodeURIComponent(info.v)}`);
+          state = { v: info.v, algo: ALGO, palette };
+          try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+          applySettings(settings.get());
+        }
+        status = "ok";
+      } catch { status = "missing"; }
+      busy = false;
+      notify();
+    }
+    function enable(on) {
+      clearInterval(timer); timer = 0;
+      if (!on) { status = "idle"; notify(); return; }
+      timer = setInterval(check, 60000);
+      check();
+    }
+    addEventListener("focus", () => check());
+    document.addEventListener("visibilitychange", () => check());
+    return {
+      palette: () => state?.palette || null,
+      status: () => status,
+      enable,
+      onChange(f) { listeners.add(f); return () => listeners.delete(f); }
+    };
+  })();
+  // colours actually shown: the wallpaper palette replaces the manual colours while the option is on
+  const effective = s => (s.wallpaper && wallpaper.palette() ? { ...s, ...wallpaper.palette() } : s);
 
   /* Topo background: contour lines of an animated 3D simplex noise field, drawn as monospace characters.
      topo(canvas, options) – the canvas sits fixed behind the content, the mouse creates a light cone.
@@ -241,7 +345,7 @@
     canvas.style.cssText = "position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none";
     canvas.style.opacity = String(OPTS.opacity);
     document.body.prepend(canvas);
-    const s = settings.get();
+    const s = effective(settings.get());
     topoCtl = topo(canvas, {
       font: '"Geist Mono", ui-monospace, monospace', size: OPTS.size,
       color: s.line, accent: s.accentLine, every: 5,
@@ -257,7 +361,8 @@
   const mix = (h, to, f) => { const a = hexRgb(h), b = hexRgb(to); return rgbHex(a.map((v, i) => v + (b[i] - v) * f)); };
   const isHex = v => /^#[0-9a-f]{6}$/i.test(v);
 
-  function applySettings(s) {
+  function applySettings(raw) {
+    const s = effective(raw);
     const root = document.documentElement.style;
     const put = (vars, on) => {
       for (const [k, v] of Object.entries(vars)) {
@@ -295,7 +400,7 @@
     const el = document.createElement("div");
     el.id = "obs-settings";
     const color = (key, label, hint, presets = []) => `
-      <div class="obs-row">
+      <div class="obs-row" data-color>
         <div class="obs-label"><span>${label}</span><small>${hint}</small></div>
         <div class="obs-color">
           ${presets.map(p => `<button type="button" class="obs-swatch" data-key="${key}" data-val="${p}" style="--c:${p}" aria-label="${p}"></button>`).join("")}
@@ -315,6 +420,11 @@
       <h3>Hintergrund-Animation</h3>
       ${range("fps", "FPS mit Fokus", "Spotify ist das aktive Fenster", 1, 60)}
       ${range("blurFps", "FPS ohne Fokus", "anderes Fenster aktiv · 0 = pausiert", 0, 30)}
+      <h3>Wallpaper</h3>
+      <div class="obs-row">
+        <div class="obs-label"><span>Farben aus Wallpaper</span><small class="obs-wp-status"></small></div>
+        <label class="obs-switch"><input type="checkbox" data-key="wallpaper"><span></span></label>
+      </div>
       <h3>Hintergrund-Farben</h3>
       ${color("bg", "Grundfarbe", "Fläche hinter Linien und Panels", ["#09090b", "#0b0d12", "#0d0a12", "#0f0b0b"])}
       ${color("line", "Linien", "Höhenlinien", ["#615c6b", "#5a6478", "#6b6b6b"])}
@@ -324,28 +434,48 @@
       <div class="obs-actions"><button type="button" class="obs-reset">Standard wiederherstellen</button></div>`;
 
     const sync = (key, val) => {
+      if (typeof val === "boolean") { el.querySelectorAll(`input[data-key="${key}"]`).forEach(i => i.checked = val); return; }
       el.querySelectorAll(`[data-key="${key}"]:not(.obs-swatch)`).forEach(i => { if (i.value !== String(val)) i.value = val; });
       el.querySelectorAll(`.obs-pick input[data-key="${key}"]`).forEach(i => i.parentElement.style.setProperty("--c", val));
       el.querySelectorAll(`output[data-for="${key}"]`).forEach(o => o.textContent = val);
       el.querySelectorAll(`.obs-swatch[data-key="${key}"]`).forEach(b => b.classList.toggle("on", b.dataset.val.toLowerCase() === String(val).toLowerCase()));
     };
-    const commit = (key, raw) => {
-      const val = typeof DEFAULTS[key] === "number" ? Number(raw) : String(raw).trim().toLowerCase();
-      if (typeof val === "string" && !isHex(val)) return;
-      settings.set({ [key]: val });
-      sync(key, val);
+    // everything shown comes from the effective values (wallpaper colours while that option is on)
+    const STATUS = {
+      off: "Grundfarbe, Linien und Akzentfarbe folgen dem Desktop-Hintergrund",
+      idle: "wird gelesen …", loading: "wird gelesen …",
+      ok: "aktiv · Farbton aus dem aktuellen Wallpaper",
+      missing: "Wallpaper-Helfer läuft nicht · wallpaper-sync.ps1 -Install ausführen"
     };
-    Object.keys(DEFAULTS).forEach(k => sync(k, s[k]));
+    const refresh = () => {
+      const cur = settings.get(), eff = effective(cur);
+      Object.keys(DEFAULTS).forEach(k => sync(k, eff[k]));
+      el.classList.toggle("wp-on", cur.wallpaper);
+      const st = el.querySelector(".obs-wp-status");
+      st.textContent = cur.wallpaper ? STATUS[wallpaper.status()] : STATUS.off;
+      st.classList.toggle("warn", cur.wallpaper && wallpaper.status() === "missing");
+    };
+    const off = wallpaper.onChange(() => { if (!el.isConnected) return off(); refresh(); });
+    const commit = (key, raw) => {
+      const t = typeof DEFAULTS[key];
+      const val = t === "number" ? Number(raw) : t === "boolean" ? !!raw : String(raw).trim().toLowerCase();
+      if (t === "string" && !isHex(val)) return;
+      settings.set({ [key]: val });
+      if (key === "wallpaper") wallpaper.enable(val);
+      refresh();
+    };
+    refresh();
     el.addEventListener("input", e => {
       const k = e.target.dataset.key;
       if (!k) return;
-      if (e.target.classList.contains("obs-hex")) { const v = e.target.value.startsWith("#") ? e.target.value : "#" + e.target.value; if (isHex(v)) commit(k, v); }
+      if (e.target.type === "checkbox") commit(k, e.target.checked);
+      else if (e.target.classList.contains("obs-hex")) { const v = e.target.value.startsWith("#") ? e.target.value : "#" + e.target.value; if (isHex(v)) commit(k, v); }
       else commit(k, e.target.value);
     });
     el.addEventListener("click", e => {
       const sw = e.target.closest(".obs-swatch");
       if (sw) commit(sw.dataset.key, sw.dataset.val);
-      if (e.target.closest(".obs-reset")) { settings.reset(); Object.keys(DEFAULTS).forEach(k => sync(k, DEFAULTS[k])); }
+      if (e.target.closest(".obs-reset")) { settings.reset(); refresh(); }
     });
     Spicetify.PopupModal.display({ title: "Obsidian-Einstellungen", content: el, isLarge: true });
   }
@@ -511,6 +641,7 @@
   applySettings(settings.get());
   start();
   settingsMenu();
+  wallpaper.enable(settings.get().wallpaper);
   windowControls();
   if (OPTS.coverHeader) coverHeader();
 })();
