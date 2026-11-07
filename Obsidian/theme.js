@@ -377,7 +377,9 @@
     put({
       "--obs-accent-fill": a, "--obs-accent": light, "--obs-accent-hi": hi,
       "--obs-accent-hover": mix(a, "#ffffff", 0.1), "--obs-accent-press": mix(a, "#000000", 0.12),
-      "--spice-button": light, "--spice-button-active": a, "--spice-notification": a, "--spice-selected-row": hi
+      "--spice-button": light, "--spice-button-active": a, "--spice-notification": a, "--spice-selected-row": hi,
+      // header palette for pages without a cover colour (home gradient, fallbacks); stock values are the plum #1c1030/#33205a/#b9aed0
+      "--obs-header": mix(a, "#09090b", 0.82), "--obs-header-top": mix(a, "#09090b", 0.65), "--obs-header-sub": mix(a, "#d0d0d8", 0.8)
     }, a.toLowerCase() !== DEFAULTS.accent);
     const bg = isHex(s.bg) ? s.bg : DEFAULTS.bg;
     put({ "--obs-bg-color": bg, "--spice-main": bg, "--spice-sidebar": bg, "--spice-player": bg }, bg.toLowerCase() !== DEFAULTS.bg);
