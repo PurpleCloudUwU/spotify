@@ -191,8 +191,10 @@ if ($Diagnose) {
             if ($i -ge 0) { Write-Host '  Ausschnitt:'; Write-Host ($raw.Substring($i, [Math]::Min(600, $raw.Length - $i)) -replace '(?m)^', '    ') }
         }
     }
-    D 'Registry WallPaper:' (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name WallPaper -ErrorAction SilentlyContinue).WallPaper
-    D 'WallpaperSource:' (Get-ItemProperty 'HKCU:\Software\Microsoft\Internet Explorer\Desktop\General' -Name WallpaperSource -ErrorAction SilentlyContinue).WallpaperSource
+    $rw = (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name WallPaper -ErrorAction SilentlyContinue).WallPaper
+    D 'Registry WallPaper:' "$rw (da: $(if ($rw) { Test-Path -LiteralPath $rw }))"
+    $ws = (Get-ItemProperty 'HKCU:\Software\Microsoft\Internet Explorer\Desktop\General' -Name WallpaperSource -ErrorAction SilentlyContinue).WallpaperSource
+    D 'WallpaperSource:' "$ws (da: $(if ($ws) { Test-Path -LiteralPath $ws }))"
     D 'TranscodedWallpaper:' (Test-Path -LiteralPath (Join-Path $env:APPDATA 'Microsoft\Windows\Themes\TranscodedWallpaper'))
     D 'CachedFiles:' ((Get-ChildItem -LiteralPath (Join-Path $env:APPDATA 'Microsoft\Windows\Themes\CachedFiles') -File -ErrorAction SilentlyContinue).Name -join ', ')
     $we = Test-WallpaperEngine
