@@ -38,7 +38,7 @@
   /* Wallpaper colours. Spotify's page (https://xpui.app.spotify.com) cannot read local files, but it serves
      %APPDATA%\Spotify\Apps\xpui live. wallpaper-sync.ps1 (autostart) drops a small copy of the desktop wallpaper there
      (obsidian-wallpaper.jpg + obsidian-wallpaper.json with a version stamp); this reads the dominant hue from it.
-     Checked when Spotify gets focus and once a minute while visible – a tiny same-origin fetch. */
+     Checked when Spotify gets focus and every 15 s while visible – a tiny same-origin fetch. */
   const wallpaper = (() => {
     const KEY = "obsidian:wallpaper", ALGO = 2; // bump ALGO when extract() changes, cached palettes are then recomputed
     let state = null, status = "idle", busy = false, timer = 0;
@@ -123,7 +123,7 @@
     function enable(on) {
       clearInterval(timer); timer = 0;
       if (!on) { status = "idle"; notify(); return; }
-      timer = setInterval(check, 60000);
+      timer = setInterval(check, 15000);
       check();
     }
     addEventListener("focus", () => check());

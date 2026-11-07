@@ -7,7 +7,7 @@
 #   wallpaper-sync.ps1 -Install    Autostart-Eintrag anlegen und Helfer sofort starten (keine Admin-Rechte noetig)
 #   wallpaper-sync.ps1 -Uninstall  Autostart-Eintrag, laufenden Helfer und Kopie entfernen
 #   wallpaper-sync.ps1             einmal abgleichen
-#   wallpaper-sync.ps1 -Watch      alle 10 s pruefen (so laeuft er im Autostart)
+#   wallpaper-sync.ps1 -Watch      alle 5 s pruefen (so laeuft er im Autostart)
 param([switch]$Install, [switch]$Uninstall, [switch]$Watch)
 
 $ErrorActionPreference = 'Stop'
@@ -118,7 +118,7 @@ if ($Watch) {
     if (-not $mutex.WaitOne(0)) { return }                        # laeuft schon
     while ($true) {
         try { Sync-Wallpaper } catch {}
-        Start-Sleep -Seconds 10
+        Start-Sleep -Seconds 5
     }
 }
 
