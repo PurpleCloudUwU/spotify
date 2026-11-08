@@ -22,6 +22,7 @@
     listBlur: 16,        // backdrop blur of those panels in px (0 = no blur)
     motion: true,        // home gradient and blurred cover headers drift slowly
     motionStrength: 100, // amplitude of that drift in % (100 = stock)
+    visualizer: true,    // the moving backgrounds pulse with the beat and loudness of the current song
     pauseHide: true,     // home gradient and blurred cover slide up and out while nothing plays, back in on play
     wallpaper: false     // take bg/line/accentLine/accent from the desktop wallpaper (needs wallpaper-sync.ps1)
   };
@@ -385,26 +386,86 @@
     const s = settings.get();
     if (!s.motion) return;
     const t = now / 1000, k = Math.min(2, Math.max(0, Number(s.motionStrength) / 100 || 0));
+    const v = s.visualizer ? viz.sample() : null; // { beat 0..1 (decays after each beat), level 0..1 (loudness) }
+    const beat = v ? v.beat : 0, level = v ? v.level : 0;
     const host = document.querySelector('#main-view main > div > div:first-child[style*="background-color"]');
     if (host) {
       if (!wave || wave.parentElement !== host) {
         wave = document.createElement("div");
         wave.id = "obs-home-wave";
         wave.setAttribute("aria-hidden", "true");
-        wave.innerHTML = "<i></i><i></i>";
+        wave.innerHTML = "<i></i><i></i><i></i>";
         host.appendChild(wave);
       }
-      const w = host.clientWidth, [a, b] = wave.children;
-      a.style.transform = `translate3d(${(w * (0.18 + 0.1 * k * Math.sin(t * 0.21))).toFixed(1)}px, ${(16 * k * Math.sin(t * 0.33)).toFixed(1)}px, 0) scale(${(1 + 0.12 * k * Math.sin(t * 0.17)).toFixed(3)})`;
-      b.style.transform = `translate3d(${(w * (0.62 + 0.12 * k * Math.sin(t * 0.15 + 2))).toFixed(1)}px, ${(20 * k * Math.sin(t * 0.27 + 1)).toFixed(1)}px, 0) scale(${(1 + 0.15 * k * Math.sin(t * 0.23 + 4)).toFixed(3)})`;
+      const w = host.clientWidth, [a, b, c] = wave.children;
+      // blob radius 150px, centre within ±30px of the top, scale ≤ 1.45 → fully faded before the 256px bottom edge
+      const blob = (el, x, y, sc, op) => {
+        el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) scale(${Math.min(1.45, Math.max(0.8, sc)).toFixed(3)})`;
+        el.style.opacity = op.toFixed(3);
+      };
+      const lv = v ? 0.55 + 0.45 * level : 1;
+      blob(a, w * (0.2 + 0.16 * k * Math.sin(t * 0.43)), Math.min(30, 26 * k * Math.sin(t * 0.61)),
+        1 + 0.18 * k * Math.sin(t * 0.37) + 0.3 * beat, lv);
+      blob(b, w * (0.65 + 0.18 * k * Math.sin(t * 0.31 + 2)), Math.min(30, 28 * k * Math.sin(t * 0.53 + 1)),
+        1 + 0.2 * k * Math.sin(t * 0.47 + 4) + 0.22 * beat, lv);
+      blob(c, w * (0.42 + 0.22 * k * Math.sin(t * 0.27 + 5)), Math.min(30, -20 * k * Math.sin(t * 0.41 + 3)),
+        0.9 + 0.15 * k * Math.sin(t * 0.33 + 1) + 0.35 * beat, v ? 0.25 + 0.75 * Math.max(level, beat) : 0.7);
     }
     const cv = document.querySelector("#obs-cover-bg > canvas");
     if (cv) {
-      // scale ≥ 1.16 leaves 8 % on each side for the ±6 % drift; translateY ≤ 0 keeps the top edge above the page
-      const sc = 1.16 + 0.06 * k * (0.5 + 0.5 * Math.sin(t * 0.23));
-      cv.style.transform = `translate3d(${(6 * k * Math.sin(t * 0.19)).toFixed(2)}%, ${(-3 * k * (0.5 + 0.5 * Math.sin(t * 0.29 + 1))).toFixed(2)}%, 0) scale(${sc.toFixed(3)})`;
+      // scale stays ≤ 1.28 (the baked fade ends at 76 % of the height); translateY ≤ 0 keeps the top edge above the page
+      const sc = Math.min(1.28, 1.16 + 0.06 * k * (0.5 + 0.5 * Math.sin(t * 0.37)) + 0.05 * beat);
+      cv.style.transform = `translate3d(${(6 * k * Math.sin(t * 0.29)).toFixed(2)}%, ${(-3 * k * (0.5 + 0.5 * Math.sin(t * 0.41 + 1))).toFixed(2)}%, 0) scale(${sc.toFixed(3)})`;
+      cv.style.opacity = v ? (0.7 + 0.3 * Math.max(level, beat)).toFixed(3) : "";
     }
   }
+  // Visualizer data: Spotify does not hand the audio itself to the page, but Spicetify.getAudioData() returns the
+  // track analysis (beats + loudness segments). Sampling it at the playback position costs two binary searches per frame.
+  const viz = (() => {
+    let uri = null, data = null, loading = null;
+    const find = (arr, x) => { let lo = 0, hi = arr.length - 1; if (hi < 0 || x < arr[0]) return -1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (arr[m] <= x) lo = m; else hi = m - 1; } return lo; };
+    function load(u) {
+      uri = u; data = null;
+      if (!u || !window.Spicetify?.getAudioData) return;
+      const p = loading = Spicetify.getAudioData(u).then(d => {
+        if (p !== loading || !d?.segments?.length) return;
+        const seg = d.segments, ref = (d.track?.loudness ?? -10);
+        data = {
+          beats: Float64Array.from(d.beats || [], b => b.start),
+          bconf: Float32Array.from(d.beats || [], b => b.confidence),
+          start: Float64Array.from(seg, x => x.start),
+          l0: Float32Array.from(seg, x => x.loudness_start),
+          lm: Float32Array.from(seg, x => x.loudness_max),
+          lt: Float32Array.from(seg, x => x.loudness_max_time),
+          dur: Float32Array.from(seg, x => x.duration),
+          ref
+        };
+      }, () => {});
+    }
+    return {
+      sample() {
+        const P = window.Spicetify?.Player;
+        if (!P?.isPlaying?.()) return null;
+        const u = P.data?.item?.uri;
+        if (u !== uri) load(u);
+        if (!data) return null;
+        const pos = P.getProgress() / 1000;
+        let beat = 0;
+        const bi = find(data.beats, pos);
+        if (bi >= 0) beat = Math.exp(-(pos - data.beats[bi]) / 0.18) * (0.5 + 0.5 * data.bconf[bi]);
+        let level = 0;
+        const si = find(data.start, pos);
+        if (si >= 0) {
+          const dt = pos - data.start[si], lt = data.lt[si];
+          const next = si + 1 < data.l0.length ? data.l0[si + 1] : data.lm[si] - 10;
+          const db = dt < lt ? data.l0[si] + (data.lm[si] - data.l0[si]) * (dt / Math.max(lt, 1e-3))
+            : data.lm[si] + (next - data.lm[si]) * Math.min(1, (dt - lt) / Math.max(data.dur[si] - lt, 1e-3));
+          level = Math.min(1, Math.max(0, (db - (data.ref - 14)) / 16)); // 14 dB under the track average → 0, 2 dB over → 1
+        }
+        return { beat, level };
+      }
+    };
+  })();
   // Playback state → html.obs-paused (user.css slides the home gradient and #obs-cover-bg up and out)
   function playState(tries = 0) {
     const P = window.Spicetify?.Player;
@@ -417,7 +478,7 @@
   }
   function stopMotion() {
     wave?.remove(); wave = null;
-    document.querySelectorAll("#obs-cover-bg > canvas").forEach(c => c.style.transform = "");
+    document.querySelectorAll("#obs-cover-bg > canvas").forEach(c => { c.style.transform = ""; c.style.opacity = ""; });
   }
   // ---------------------------------------------------------------- settings: apply
   let topoCtl = null;
@@ -502,6 +563,10 @@
       </div>
       <div class="obs-motion-opts">
       ${range("motionStrength", "Stärke", "wie weit sich der Hintergrund bewegt", 10, 200, " %")}
+      <div class="obs-row">
+        <div class="obs-label"><span>Visualizer</span><small>pulsiert mit Beat und Lautstärke des Songs · flüssiger mit mehr FPS</small></div>
+        <label class="obs-switch"><input type="checkbox" data-key="visualizer"><span></span></label>
+      </div>
       </div>
       <div class="obs-row">
         <div class="obs-label"><span>Ausblenden bei Pause</span><small>Verlauf und Cover-Hintergrund gleiten nach oben weg, solange keine Musik läuft</small></div>

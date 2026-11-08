@@ -249,18 +249,21 @@ header[data-testid="topbar"] > div[style*="--background-base"] {
 }
 #obs-home-wave > i {
   position: absolute;
-  left: -260px;
-  top: -200px;
-  width: 520px;
-  height: 400px;
+  left: -300px;
+  top: -150px;
+  width: 600px;
+  height: 300px;
   border-radius: 50%;
-  will-change: transform;
+  will-change: transform, opacity;
 }
-#obs-home-wave > i:first-child {
-  background: radial-gradient(closest-side, color-mix(in oklch, var(--obs-header-top) 70%, transparent), transparent);
+#obs-home-wave > i:nth-child(1) {
+  background: radial-gradient(closest-side, oklch(from var(--obs-header-top) calc(l + 0.1) calc(c + 0.05) h / .9), transparent);
 }
-#obs-home-wave > i:last-child {
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--obs-accent-fill) 22%, transparent), transparent);
+#obs-home-wave > i:nth-child(2) {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--obs-accent-fill) 45%, transparent), transparent);
+}
+#obs-home-wave > i:nth-child(3) {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--obs-accent) 35%, transparent), transparent);
 }
 /* Mixed playlists add a vignette to the header (::after, radial gradient to opaque --background-base) that ends
    in a hard edge above the action bar; the theme already darkens the header itself */
