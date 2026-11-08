@@ -280,6 +280,7 @@ header[data-testid="topbar"] > div[style*="--background-base"] {
   display: block;
   width: 100%;
   height: 100%;
+  transform-origin: 50% 0; /* theme.js bgMotion drifts and zooms it from the top centre */
 }
 /* Spotify's own colour layers become transparent so the blurred cover shows through */
 #main-view [data-testid$="-page"]:has(> #obs-cover-bg) [style*="--background-base"] {
@@ -537,6 +538,7 @@ div.progress-bar.progress-bar { transition: none !important; }
 #obs-settings .obs-label span { font-size: 14px; font-weight: 500; }
 #obs-settings .obs-label small { font-size: 12px; color: var(--obs-sub); }
 #obs-settings .obs-range { display: flex; align-items: center; gap: 12px; }
+#obs-settings.motion-off .obs-motion-opts { opacity: .4; pointer-events: none; }
 #obs-settings input[type="range"] {
   width: 180px;
   accent-color: var(--obs-accent-fill);

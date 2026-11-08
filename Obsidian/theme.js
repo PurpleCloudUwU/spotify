@@ -20,6 +20,8 @@
     accent: "#8a2be2",   // general accent colour (buttons, progress bar, highlights)
     listAlpha: 62,       // opacity of the library / main view / right panel in % (0 = fully see-through)
     listBlur: 16,        // backdrop blur of those panels in px (0 = no blur)
+    motion: true,        // home gradient and blurred cover headers drift slowly
+    motionStrength: 100, // amplitude of that drift in % (100 = stock)
     wallpaper: false     // take bg/line/accentLine/accent from the desktop wallpaper (needs wallpaper-sync.ps1)
   };
   const settings = (() => {
@@ -368,29 +370,44 @@
       color: s.line, accent: s.accentLine, every: 5,
       spot: OPTS.spotlight ? 180 : 0, spotGain: 0.5,
       speed: OPTS.speed, fps: s.fps, idleFps: s.fps, blurFps: s.blurFps, seed: 3,
-      onFrame: homeWave
+      onFrame: bgMotion
     });
   }
 
-  // Home page: the colour block behind the shortcut grid (absolute, z-index -1, 256px, no children) gets two soft
-  // blobs that drift slowly. They move only inside the topo frame, so the glass panels re-blur no more often than
-  // before, and the transform-only change needs no repaint. Paused with the topo (no focus + blurFps 0, reduced motion).
+  // Moving backgrounds. Everything moves only inside the topo frame, so the glass panels re-blur no more often than
+  // before, and the transform-only changes need no repaint. Paused with the topo (no focus + blurFps 0, reduced motion).
+  // Home page: the colour block behind the shortcut grid (absolute, z-index -1, 256px, no children) gets two soft blobs.
+  // Pages with a cover (playlist, album, artist, profile): the blurred cover canvas drifts and zooms slightly;
+  // user.css scales it from the top centre, so its edges never come into view.
   let wave = null;
-  function homeWave(now) {
+  function bgMotion(now) {
+    const s = settings.get();
+    if (!s.motion) return;
+    const t = now / 1000, k = Math.min(2, Math.max(0, Number(s.motionStrength) / 100 || 0));
     const host = document.querySelector('#main-view main > div > div:first-child[style*="background-color"]');
-    if (!host) return;
-    if (!wave || wave.parentElement !== host) {
-      wave = document.createElement("div");
-      wave.id = "obs-home-wave";
-      wave.setAttribute("aria-hidden", "true");
-      wave.innerHTML = "<i></i><i></i>";
-      host.appendChild(wave);
+    if (host) {
+      if (!wave || wave.parentElement !== host) {
+        wave = document.createElement("div");
+        wave.id = "obs-home-wave";
+        wave.setAttribute("aria-hidden", "true");
+        wave.innerHTML = "<i></i><i></i>";
+        host.appendChild(wave);
+      }
+      const w = host.clientWidth, [a, b] = wave.children;
+      a.style.transform = `translate3d(${(w * (0.18 + 0.1 * k * Math.sin(t * 0.21))).toFixed(1)}px, ${(16 * k * Math.sin(t * 0.33)).toFixed(1)}px, 0) scale(${(1 + 0.12 * k * Math.sin(t * 0.17)).toFixed(3)})`;
+      b.style.transform = `translate3d(${(w * (0.62 + 0.12 * k * Math.sin(t * 0.15 + 2))).toFixed(1)}px, ${(20 * k * Math.sin(t * 0.27 + 1)).toFixed(1)}px, 0) scale(${(1 + 0.15 * k * Math.sin(t * 0.23 + 4)).toFixed(3)})`;
     }
-    const t = now / 1000, w = host.clientWidth, [a, b] = wave.children;
-    a.style.transform = `translate3d(${(w * (0.18 + 0.1 * Math.sin(t * 0.21))).toFixed(1)}px, ${(16 * Math.sin(t * 0.33)).toFixed(1)}px, 0) scale(${(1 + 0.12 * Math.sin(t * 0.17)).toFixed(3)})`;
-    b.style.transform = `translate3d(${(w * (0.62 + 0.12 * Math.sin(t * 0.15 + 2))).toFixed(1)}px, ${(20 * Math.sin(t * 0.27 + 1)).toFixed(1)}px, 0) scale(${(1 + 0.15 * Math.sin(t * 0.23 + 4)).toFixed(3)})`;
+    const cv = document.querySelector("#obs-cover-bg > canvas");
+    if (cv) {
+      // scale ≥ 1.16 leaves 8 % on each side for the ±6 % drift; translateY ≤ 0 keeps the top edge above the page
+      const sc = 1.16 + 0.06 * k * (0.5 + 0.5 * Math.sin(t * 0.13));
+      cv.style.transform = `translate3d(${(6 * k * Math.sin(t * 0.19)).toFixed(2)}%, ${(-3 * k * (0.5 + 0.5 * Math.sin(t * 0.29 + 1))).toFixed(2)}%, 0) scale(${sc.toFixed(3)})`;
+    }
   }
-
+  function stopMotion() {
+    wave?.remove(); wave = null;
+    document.querySelectorAll("#obs-cover-bg > canvas").forEach(c => c.style.transform = "");
+  }
   // ---------------------------------------------------------------- settings: apply
   let topoCtl = null;
   const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
@@ -423,6 +440,7 @@
     const la = Math.min(100, Math.max(0, Number(s.listAlpha))), lb = Math.min(40, Math.max(0, Number(s.listBlur)));
     put({ "--obs-list-alpha": String(la / 100) }, Number.isFinite(la) && la !== DEFAULTS.listAlpha);
     put({ "--obs-list-blur": lb + "px" }, Number.isFinite(lb) && lb !== DEFAULTS.listBlur);
+    if (!s.motion) stopMotion();
     topoCtl?.set({
       fps: s.fps, idleFps: s.fps, blurFps: s.blurFps,
       color: isHex(s.line) ? s.line : DEFAULTS.line, accent: isHex(s.accentLine) ? s.accentLine : DEFAULTS.accentLine
@@ -465,6 +483,14 @@
       <h3>Panels</h3>
       ${range("listAlpha", "Deckkraft", "Bibliothek, Lieder, rechtes Panel · 0 = ganz durchsichtig", 0, 100, " %")}
       ${range("listBlur", "Unschärfe", "Blur hinter den Panels · 0 = aus", 0, 40, " px")}
+      <h3>Bewegung</h3>
+      <div class="obs-row">
+        <div class="obs-label"><span>Bewegter Hintergrund</span><small>Verlauf auf der Startseite und Cover-Hintergrund von Playlists, Alben, Künstlern, Profilen</small></div>
+        <label class="obs-switch"><input type="checkbox" data-key="motion"><span></span></label>
+      </div>
+      <div class="obs-motion-opts">
+      ${range("motionStrength", "Stärke", "wie weit sich der Hintergrund bewegt", 10, 200, " %")}
+      </div>
       <h3>Wallpaper</h3>
       <div class="obs-row">
         <div class="obs-label"><span>Farben aus Wallpaper</span><small class="obs-wp-status"></small></div>
@@ -497,6 +523,7 @@
       const cur = settings.get(), eff = effective(cur);
       Object.keys(DEFAULTS).forEach(k => sync(k, eff[k]));
       el.classList.toggle("wp-on", cur.wallpaper);
+      el.classList.toggle("motion-off", !cur.motion);
       const st = el.querySelector(".obs-wp-status");
       st.textContent = cur.wallpaper ? STATUS[wallpaper.status() === "ok" && wallpaper.live() ? "live" : wallpaper.status()] : STATUS.off;
       st.classList.toggle("warn", cur.wallpaper && wallpaper.status() === "missing");
