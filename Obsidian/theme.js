@@ -400,7 +400,7 @@
     const cv = document.querySelector("#obs-cover-bg > canvas");
     if (cv) {
       // scale ≥ 1.16 leaves 8 % on each side for the ±6 % drift; translateY ≤ 0 keeps the top edge above the page
-      const sc = 1.16 + 0.06 * k * (0.5 + 0.5 * Math.sin(t * 0.13));
+      const sc = 1.16 + 0.06 * k * (0.5 + 0.5 * Math.sin(t * 0.23));
       cv.style.transform = `translate3d(${(6 * k * Math.sin(t * 0.19)).toFixed(2)}%, ${(-3 * k * (0.5 + 0.5 * Math.sin(t * 0.29 + 1))).toFixed(2)}%, 0) scale(${sc.toFixed(3)})`;
     }
   }
