@@ -260,6 +260,7 @@
       sx += (mx - sx) * 0.2 * k; sy += (my - sy) * 0.2 * k;
       for (let n = N * o.flicker * k; n > 0; n--) C[Math.random() * N | 0] = Math.random() * nch | 0;
       render();
+      o.onFrame?.(now);
       schedule();
     }
     function schedule() {
@@ -366,8 +367,28 @@
       font: '"Geist Mono", ui-monospace, monospace', size: OPTS.size,
       color: s.line, accent: s.accentLine, every: 5,
       spot: OPTS.spotlight ? 180 : 0, spotGain: 0.5,
-      speed: OPTS.speed, fps: s.fps, idleFps: s.fps, blurFps: s.blurFps, seed: 3
+      speed: OPTS.speed, fps: s.fps, idleFps: s.fps, blurFps: s.blurFps, seed: 3,
+      onFrame: homeWave
     });
+  }
+
+  // Home page: the colour block behind the shortcut grid (absolute, z-index -1, 256px, no children) gets two soft
+  // blobs that drift slowly. They move only inside the topo frame, so the glass panels re-blur no more often than
+  // before, and the transform-only change needs no repaint. Paused with the topo (no focus + blurFps 0, reduced motion).
+  let wave = null;
+  function homeWave(now) {
+    const host = document.querySelector('#main-view main > div > div:first-child[style*="background-color"]');
+    if (!host) return;
+    if (!wave || wave.parentElement !== host) {
+      wave = document.createElement("div");
+      wave.id = "obs-home-wave";
+      wave.setAttribute("aria-hidden", "true");
+      wave.innerHTML = "<i></i><i></i>";
+      host.appendChild(wave);
+    }
+    const t = now / 1000, w = host.clientWidth, [a, b] = wave.children;
+    a.style.transform = `translate3d(${(w * (0.18 + 0.1 * Math.sin(t * 0.21))).toFixed(1)}px, ${(16 * Math.sin(t * 0.33)).toFixed(1)}px, 0) scale(${(1 + 0.12 * Math.sin(t * 0.17)).toFixed(3)})`;
+    b.style.transform = `translate3d(${(w * (0.62 + 0.12 * Math.sin(t * 0.15 + 2))).toFixed(1)}px, ${(20 * Math.sin(t * 0.27 + 1)).toFixed(1)}px, 0) scale(${(1 + 0.15 * Math.sin(t * 0.23 + 4)).toFixed(3)})`;
   }
 
   // ---------------------------------------------------------------- settings: apply

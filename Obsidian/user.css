@@ -228,6 +228,29 @@ header[data-testid="topbar"] > div[style*="--background-base"] {
   background-image: linear-gradient(in oklch to bottom, var(--obs-cb, var(--obs-header)), transparent) !important;
 }
 #main-view [data-testid="overscroll-background"] { background-color: transparent !important; }
+/* Drifting blobs on the home gradient (theme.js homeWave moves them with the topo frames). Centred near the top and
+   fully faded out above 240px, so nothing reaches the bottom edge of the 256px block. */
+#obs-home-wave {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+#obs-home-wave > i {
+  position: absolute;
+  left: -260px;
+  top: -200px;
+  width: 520px;
+  height: 400px;
+  border-radius: 50%;
+  will-change: transform;
+}
+#obs-home-wave > i:first-child {
+  background: radial-gradient(closest-side, color-mix(in oklch, var(--obs-header-top) 70%, transparent), transparent);
+}
+#obs-home-wave > i:last-child {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--obs-accent-fill) 22%, transparent), transparent);
+}
 /* Mixed playlists add a vignette to the header (::after, radial gradient to opaque --background-base) that ends
    in a hard edge above the action bar; the theme already darkens the header itself */
 #main-view [data-testid="entity-header"] > div::after { background-image: none !important; }
