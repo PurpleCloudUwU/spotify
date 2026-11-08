@@ -228,6 +228,17 @@ header[data-testid="topbar"] > div[style*="--background-base"] {
   background-image: linear-gradient(in oklch to bottom, var(--obs-cb, var(--obs-header)), transparent) !important;
 }
 #main-view [data-testid="overscroll-background"] { background-color: transparent !important; }
+/* Nothing playing (html.obs-paused, set by theme.js playState): the home gradient and the blurred cover slide up and
+   fade out, and come back down from the top when playback starts again */
+#main-view main > div > div:first-child[style*="background-color"],
+#obs-cover-bg {
+  transition: transform .9s cubic-bezier(.65, 0, .35, 1), opacity .9s ease;
+}
+.obs-paused #main-view main > div > div:first-child[style*="background-color"],
+.obs-paused #obs-cover-bg {
+  transform: translateY(-100%);
+  opacity: 0;
+}
 /* Drifting blobs on the home gradient (theme.js homeWave moves them with the topo frames). Centred near the top and
    fully faded out above 240px, so nothing reaches the bottom edge of the 256px block. */
 #obs-home-wave {

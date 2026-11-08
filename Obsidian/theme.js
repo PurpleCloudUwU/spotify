@@ -22,6 +22,7 @@
     listBlur: 16,        // backdrop blur of those panels in px (0 = no blur)
     motion: true,        // home gradient and blurred cover headers drift slowly
     motionStrength: 100, // amplitude of that drift in % (100 = stock)
+    pauseHide: true,     // home gradient and blurred cover slide up and out while nothing plays, back in on play
     wallpaper: false     // take bg/line/accentLine/accent from the desktop wallpaper (needs wallpaper-sync.ps1)
   };
   const settings = (() => {
@@ -404,6 +405,16 @@
       cv.style.transform = `translate3d(${(6 * k * Math.sin(t * 0.19)).toFixed(2)}%, ${(-3 * k * (0.5 + 0.5 * Math.sin(t * 0.29 + 1))).toFixed(2)}%, 0) scale(${sc.toFixed(3)})`;
     }
   }
+  // Playback state → html.obs-paused (user.css slides the home gradient and #obs-cover-bg up and out)
+  function playState(tries = 0) {
+    const P = window.Spicetify?.Player;
+    if (!P?.addEventListener || typeof P.isPlaying !== "function") { if (tries < 120) setTimeout(() => playState(tries + 1), 500); return; }
+    const sync = () => document.documentElement.classList.toggle("obs-paused", settings.get().pauseHide && !P.isPlaying());
+    P.addEventListener("onplaypause", () => setTimeout(sync, 0));
+    P.addEventListener("songchange", () => setTimeout(sync, 0));
+    playState.sync = sync;
+    sync();
+  }
   function stopMotion() {
     wave?.remove(); wave = null;
     document.querySelectorAll("#obs-cover-bg > canvas").forEach(c => c.style.transform = "");
@@ -441,6 +452,7 @@
     put({ "--obs-list-alpha": String(la / 100) }, Number.isFinite(la) && la !== DEFAULTS.listAlpha);
     put({ "--obs-list-blur": lb + "px" }, Number.isFinite(lb) && lb !== DEFAULTS.listBlur);
     if (!s.motion) stopMotion();
+    playState.sync?.();
     topoCtl?.set({
       fps: s.fps, idleFps: s.fps, blurFps: s.blurFps,
       color: isHex(s.line) ? s.line : DEFAULTS.line, accent: isHex(s.accentLine) ? s.accentLine : DEFAULTS.accentLine
@@ -490,6 +502,10 @@
       </div>
       <div class="obs-motion-opts">
       ${range("motionStrength", "Stärke", "wie weit sich der Hintergrund bewegt", 10, 200, " %")}
+      </div>
+      <div class="obs-row">
+        <div class="obs-label"><span>Ausblenden bei Pause</span><small>Verlauf und Cover-Hintergrund gleiten nach oben weg, solange keine Musik läuft</small></div>
+        <label class="obs-switch"><input type="checkbox" data-key="pauseHide"><span></span></label>
       </div>
       <h3>Wallpaper</h3>
       <div class="obs-row">
@@ -716,6 +732,7 @@
   applySettings(settings.get());
   start();
   settingsMenu();
+  playState();
   wallpaper.enable(settings.get().wallpaper);
   windowControls();
   if (OPTS.coverHeader) coverHeader();
