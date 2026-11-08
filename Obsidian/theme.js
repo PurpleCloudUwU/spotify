@@ -18,6 +18,8 @@
     line: "#615c6b",     // contour lines
     accentLine: "#9d4ff0", // every 5th contour line
     accent: "#8a2be2",   // general accent colour (buttons, progress bar, highlights)
+    listAlpha: 62,       // opacity of the library / main view / right panel in % (0 = fully see-through)
+    listBlur: 16,        // backdrop blur of those panels in px (0 = no blur)
     wallpaper: false     // take bg/line/accentLine/accent from the desktop wallpaper (needs wallpaper-sync.ps1)
   };
   const settings = (() => {
@@ -397,6 +399,9 @@
     }, a.toLowerCase() !== DEFAULTS.accent);
     const bg = isHex(s.bg) ? s.bg : DEFAULTS.bg;
     put({ "--obs-bg-color": bg, "--spice-main": bg, "--spice-sidebar": bg, "--spice-player": bg }, bg.toLowerCase() !== DEFAULTS.bg);
+    const la = Math.min(100, Math.max(0, Number(s.listAlpha))), lb = Math.min(40, Math.max(0, Number(s.listBlur)));
+    put({ "--obs-list-alpha": String(la / 100) }, Number.isFinite(la) && la !== DEFAULTS.listAlpha);
+    put({ "--obs-list-blur": lb + "px" }, Number.isFinite(lb) && lb !== DEFAULTS.listBlur);
     topoCtl?.set({
       fps: s.fps, idleFps: s.fps, blurFps: s.blurFps,
       color: isHex(s.line) ? s.line : DEFAULTS.line, accent: isHex(s.accentLine) ? s.accentLine : DEFAULTS.accentLine
@@ -424,18 +429,21 @@
           <input type="text" class="obs-hex" data-key="${key}" value="${s[key]}" maxlength="7" spellcheck="false">
         </div>
       </div>`;
-    const range = (key, label, hint, min, max) => `
+    const range = (key, label, hint, min, max, unit = "") => `
       <div class="obs-row">
         <div class="obs-label"><span>${label}</span><small>${hint}</small></div>
         <div class="obs-range">
           <input type="range" data-key="${key}" min="${min}" max="${max}" step="1" value="${s[key]}">
-          <output data-for="${key}">${s[key]}</output>
+          <output data-for="${key}" data-unit="${unit}">${s[key]}${unit}</output>
         </div>
       </div>`;
     el.innerHTML = `
       <h3>Hintergrund-Animation</h3>
       ${range("fps", "FPS mit Fokus", "Spotify ist das aktive Fenster", 1, 60)}
       ${range("blurFps", "FPS ohne Fokus", "anderes Fenster aktiv · 0 = pausiert", 0, 30)}
+      <h3>Panels</h3>
+      ${range("listAlpha", "Deckkraft", "Bibliothek, Lieder, rechtes Panel · 0 = ganz durchsichtig", 0, 100, " %")}
+      ${range("listBlur", "Unschärfe", "Blur hinter den Panels · 0 = aus", 0, 40, " px")}
       <h3>Wallpaper</h3>
       <div class="obs-row">
         <div class="obs-label"><span>Farben aus Wallpaper</span><small class="obs-wp-status"></small></div>
@@ -453,7 +461,7 @@
       if (typeof val === "boolean") { el.querySelectorAll(`input[data-key="${key}"]`).forEach(i => i.checked = val); return; }
       el.querySelectorAll(`[data-key="${key}"]:not(.obs-swatch)`).forEach(i => { if (i.value !== String(val)) i.value = val; });
       el.querySelectorAll(`.obs-pick input[data-key="${key}"]`).forEach(i => i.parentElement.style.setProperty("--c", val));
-      el.querySelectorAll(`output[data-for="${key}"]`).forEach(o => o.textContent = val);
+      el.querySelectorAll(`output[data-for="${key}"]`).forEach(o => o.textContent = val + (o.dataset.unit || ""));
       el.querySelectorAll(`.obs-swatch[data-key="${key}"]`).forEach(b => b.classList.toggle("on", b.dataset.val.toLowerCase() === String(val).toLowerCase()));
     };
     // everything shown comes from the effective values (wallpaper colours while that option is on)
