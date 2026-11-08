@@ -382,22 +382,26 @@
   // Pages with a cover (playlist, album, artist, profile): the blurred cover canvas drifts and zooms slightly;
   // user.css scales it from the top centre, so its edges never come into view.
   let wave = null;
+  const bands = [0, 0, 0];
   function bgMotion(now) {
     const s = settings.get();
     if (!s.motion) return;
     const t = now / 1000, k = Math.min(2, Math.max(0, Number(s.motionStrength) / 100 || 0));
     const v = s.visualizer ? viz.sample() : null; // { beat 0..1 (decays after each beat), level 0..1 (loudness) }
     const beat = v ? v.beat : 0, level = v ? v.level : 0;
+    // pitch bands change per segment (~0.25 s): smooth them so the colours fade instead of jumping
+    const tb = v ? v.bands : [0, 0, 0];
+    for (let i = 0; i < 3; i++) bands[i] += (tb[i] - bands[i]) * 0.3;
     const host = document.querySelector('#main-view main > div > div:first-child[style*="background-color"]');
     if (host) {
       if (!wave || wave.parentElement !== host) {
         wave = document.createElement("div");
         wave.id = "obs-home-wave";
         wave.setAttribute("aria-hidden", "true");
-        wave.innerHTML = "<i></i><i></i><i></i>";
+        wave.innerHTML = "<i></i><i></i><i></i><i></i><i></i>";
         host.appendChild(wave);
       }
-      const w = host.clientWidth, [a, b, c] = wave.children;
+      const w = host.clientWidth, [a, b, c, d, e] = wave.children;
       // blob radius 150px, centre within ±30px of the top, scale ≤ 1.45 → fully faded before the 256px bottom edge
       const blob = (el, x, y, sc, op) => {
         el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) scale(${Math.min(1.45, Math.max(0.8, sc)).toFixed(3)})`;
@@ -409,7 +413,12 @@
       blob(b, w * (0.65 + 0.18 * k * Math.sin(t * 0.31 + 2)), Math.min(30, 28 * k * Math.sin(t * 0.53 + 1)),
         1 + 0.2 * k * Math.sin(t * 0.47 + 4) + 0.22 * beat, lv);
       blob(c, w * (0.42 + 0.22 * k * Math.sin(t * 0.27 + 5)), Math.min(30, -20 * k * Math.sin(t * 0.41 + 3)),
-        0.9 + 0.15 * k * Math.sin(t * 0.33 + 1) + 0.35 * beat, v ? 0.25 + 0.75 * Math.max(level, beat) : 0.7);
+        0.9 + 0.15 * k * Math.sin(t * 0.33 + 1) + 0.35 * beat, v ? 0.2 + 0.8 * Math.max(level * bands[1], beat * 0.6) : 0.7);
+      // visualizer only: neighbouring hues of the accent (±40°, user.css), lit by the low / high pitch bands of the song
+      blob(d, w * (0.3 + 0.2 * k * Math.sin(t * 0.38 + 3)), Math.min(30, 24 * k * Math.sin(t * 0.49 + 2)),
+        0.95 + 0.15 * k * Math.sin(t * 0.29 + 2) + 0.25 * beat, v ? 0.9 * bands[0] * (0.4 + 0.6 * level) : 0);
+      blob(e, w * (0.75 + 0.15 * k * Math.sin(t * 0.34 + 1)), Math.min(30, -24 * k * Math.sin(t * 0.57 + 4)),
+        0.95 + 0.15 * k * Math.sin(t * 0.39 + 5) + 0.25 * beat, v ? 0.9 * bands[2] * (0.4 + 0.6 * level) : 0);
     }
     const cv = document.querySelector("#obs-cover-bg > canvas");
     if (cv) {
@@ -438,6 +447,7 @@
           lm: Float32Array.from(seg, x => x.loudness_max),
           lt: Float32Array.from(seg, x => x.loudness_max_time),
           dur: Float32Array.from(seg, x => x.duration),
+          pitch: Float32Array.from(seg.flatMap(x => x.pitches?.length === 12 ? x.pitches : Array(12).fill(0))),
           ref
         };
       }, () => {});
@@ -453,7 +463,7 @@
         let beat = 0;
         const bi = find(data.beats, pos);
         if (bi >= 0) beat = Math.exp(-(pos - data.beats[bi]) / 0.18) * (0.5 + 0.5 * data.bconf[bi]);
-        let level = 0;
+        let level = 0, bands = [0, 0, 0];
         const si = find(data.start, pos);
         if (si >= 0) {
           const dt = pos - data.start[si], lt = data.lt[si];
@@ -461,8 +471,11 @@
           const db = dt < lt ? data.l0[si] + (data.lm[si] - data.l0[si]) * (dt / Math.max(lt, 1e-3))
             : data.lm[si] + (next - data.lm[si]) * Math.min(1, (dt - lt) / Math.max(data.dur[si] - lt, 1e-3));
           level = Math.min(1, Math.max(0, (db - (data.ref - 14)) / 16)); // 14 dB under the track average → 0, 2 dB over → 1
+          // chroma (12 pitch classes, strongest = 1) → three bands of four semitones, each scaled to its strongest note
+          const o = si * 12;
+          for (let b = 0; b < 3; b++) bands[b] = Math.max(data.pitch[o + b * 4], data.pitch[o + b * 4 + 1], data.pitch[o + b * 4 + 2], data.pitch[o + b * 4 + 3]);
         }
-        return { beat, level };
+        return { beat, level, bands };
       }
     };
   })();

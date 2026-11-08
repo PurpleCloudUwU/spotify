@@ -265,6 +265,14 @@ header[data-testid="topbar"] > div[style*="--background-base"] {
 #obs-home-wave > i:nth-child(3) {
   background: radial-gradient(closest-side, color-mix(in srgb, var(--obs-accent) 35%, transparent), transparent);
 }
+/* Visualizer colours: neighbours of the accent on the colour wheel (±40° hue), so they always fit it
+   (violet → blue and magenta, never a clashing green) */
+#obs-home-wave > i:nth-child(4) {
+  background: radial-gradient(closest-side, oklch(from var(--obs-accent-fill) clamp(.5, l, .65) c calc(h - 40) / .55), transparent);
+}
+#obs-home-wave > i:nth-child(5) {
+  background: radial-gradient(closest-side, oklch(from var(--obs-accent-fill) clamp(.5, l, .65) c calc(h + 40) / .55), transparent);
+}
 /* Mixed playlists add a vignette to the header (::after, radial gradient to opaque --background-base) that ends
    in a hard edge above the action bar; the theme already darkens the header itself */
 #main-view [data-testid="entity-header"] > div::after { background-image: none !important; }
