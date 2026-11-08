@@ -615,10 +615,12 @@
         // streaks over the rows (very dark artist photos, 2026-10-30); a floor of 20 is invisible and fixes it
         ctx.globalCompositeOperation = "lighten";
         ctx.fillStyle = "rgb(20, 20, 24)"; ctx.fillRect(0, 0, cv.width, cv.height);
-        // fade out: opaque for the first 40 %, then to transparent
+        // fade out: opaque for the first 30 %, transparent from 76 % on. bgMotion scales the canvas up to 1.28× from
+        // the top, which pushes the lower part past the clipped bottom of #obs-cover-bg; the fade has to end before that
+        // or it gets cut off with a hard edge.
         ctx.globalCompositeOperation = "destination-in";
         g = ctx.createLinearGradient(0, 0, 0, cv.height);
-        g.addColorStop(0.4, "#000"); g.addColorStop(1, "rgba(0, 0, 0, 0)");
+        g.addColorStop(0.3, "#000"); g.addColorStop(0.76, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
         bg._obsW = W;
         bg.replaceChildren(cv);
