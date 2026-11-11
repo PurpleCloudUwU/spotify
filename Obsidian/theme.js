@@ -455,7 +455,7 @@
     return {
       sample() {
         const P = window.Spicetify?.Player;
-        if (!P?.isPlaying?.()) return null;
+        if (!P || !isPlaying()) return null;
         const u = P.data?.item?.uri;
         if (u !== uri) load(u);
         if (!data) return null;
@@ -479,15 +479,23 @@
       }
     };
   })();
+  // Spicetify.Player.isPlaying() throws while the player is not ready yet (right after start): null = unknown
+  const isPlaying = () => { try { return !!window.Spicetify.Player.isPlaying(); } catch { return null; } };
   // Playback state → html.obs-paused (user.css slides the home gradient and #obs-cover-bg up and out)
   function playState(tries = 0) {
     const P = window.Spicetify?.Player;
     if (!P?.addEventListener || typeof P.isPlaying !== "function") { if (tries < 120) setTimeout(() => playState(tries + 1), 500); return; }
-    const sync = () => document.documentElement.classList.toggle("obs-paused", settings.get().pauseHide && !P.isPlaying());
+    const sync = () => {
+      const p = isPlaying();
+      if (p !== null) document.documentElement.classList.toggle("obs-paused", settings.get().pauseHide && !p);
+    };
     P.addEventListener("onplaypause", () => setTimeout(sync, 0));
     P.addEventListener("songchange", () => setTimeout(sync, 0));
     playState.sync = sync;
     sync();
+    // isPlaying() is still false right after Spotify starts even when playback resumes, and no onplaypause follows,
+    // which left the backgrounds hidden while music played. Re-check once a second (one class toggle, no layout).
+    setInterval(sync, 1000);
   }
   function stopMotion() {
     wave?.remove(); wave = null;
@@ -807,11 +815,12 @@
     ui.setButtonsVisibility({ showButtons: !document.fullscreenElement });
   }
 
-  applySettings(settings.get());
-  start();
-  settingsMenu();
-  playState();
-  wallpaper.enable(settings.get().wallpaper);
-  windowControls();
-  if (OPTS.coverHeader) coverHeader();
+  // Each part starts on its own: one that throws (e.g. after a Spotify update) must not take the others down with it
+  const steps = [
+    () => applySettings(settings.get()), start, settingsMenu, playState,
+    () => wallpaper.enable(settings.get().wallpaper),
+    () => { if (OPTS.coverHeader) coverHeader(); },
+    windowControls
+  ];
+  for (const step of steps) { try { step(); } catch (e) { console.error("[Obsidian]", e); (window.__obsErrors ||= []).push(String(e && e.stack || e)); } }
 })();

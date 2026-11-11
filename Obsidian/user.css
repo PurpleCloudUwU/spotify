@@ -331,7 +331,9 @@ header[data-testid="topbar"] > div[style*="--background-base"] {
   background-color: transparent !important;
   background-image: linear-gradient(in oklch to bottom, var(--obs-cb, var(--obs-header)), transparent) !important;
 }
-#main-view [data-testid="artist-page"]:has(> #obs-cover-bg) > div > [data-testid="entity-header"] ~ div {
+/* The content block under the artist header is opaque (--background-base) on every artist page, with or without the
+   blurred cover, and hid the panel transparency (settings: Panels → Deckkraft) */
+#main-view [data-testid="artist-page"] > div > [data-testid="entity-header"] ~ div {
   background-color: transparent !important;
 }
 #main-view [data-testid="artist-page"]:has(> #obs-cover-bg) > div > [data-testid="entity-header"] ~ div > div:first-child[style*="background-color"] {
