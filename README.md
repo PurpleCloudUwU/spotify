@@ -12,6 +12,8 @@ Das Skript installiert Spicetify bei Bedarf, kopiert das Theme nach `%APPDATA%\s
 
 Voraussetzung: Spotify-Desktop-Version von spotify.com (nicht die Microsoft-Store-Version).
 
+Zuletzt getestet mit Spotify 1.3.9.2055 und Spicetify 2.46.7 (12.11.2026).
+
 ## Manuell
 
 ```powershell
@@ -26,6 +28,10 @@ spicetify apply
 Profilbild oben rechts anklicken → **Obsidian-Einstellungen**. Änderungen wirken sofort und bleiben gespeichert:
 
 - **Hintergrund-Animation:** FPS mit Fokus (1–60, Standard 30) und ohne Fokus (0–30, Standard 4; 0 = pausiert)
+- **Panels:** Deckkraft (0–100 %, Standard 62 %) und Unschärfe (0–40 px, Standard 16 px) von Bibliothek, Liederliste und rechtem Panel. Mit wenig Deckkraft und Unschärfe ist die ASCII-Animation dahinter zu sehen
+- **Bewegung:** Der Verlauf auf der Startseite und der Cover-Hintergrund von Playlists, Alben, Künstlern und Profilen bewegen sich langsam (Stärke 10–200 %)
+  - **Visualizer:** pulsiert mit Beat und Lautstärke des Songs, dazu leuchten Nachbarfarben der Akzentfarbe je nach Tonhöhe auf (nutzt Spotifys Song-Analyse, kein Audio-Abgriff)
+  - **Ausblenden bei Pause:** Verlauf und Cover-Hintergrund gleiten nach oben weg, solange keine Musik läuft
 - **Hintergrund-Farben:** Grundfarbe, Linien, Akzentlinien (jede 5. Linie)
 - **Farbe allgemein:** Akzentfarbe für Buttons, Fortschrittsbalken und Markierungen
 
