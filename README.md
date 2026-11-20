@@ -12,7 +12,7 @@ Das Skript installiert Spicetify bei Bedarf, kopiert das Theme nach `%APPDATA%\s
 
 Voraussetzung: Spotify-Desktop-Version von spotify.com (nicht die Microsoft-Store-Version).
 
-Zuletzt getestet mit Spotify 1.3.9.2055, Spicetify 2.46.7 und Marketplace 1.0.12 (15.11.2026).
+Zuletzt getestet mit Spotify 1.3.10.2586, Spicetify 2.46.7 und Marketplace 1.0.12 (20.11.2026).
 
 ## Manuell
 
